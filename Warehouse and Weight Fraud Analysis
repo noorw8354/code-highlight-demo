@@ -1,0 +1,191 @@
+DROP TABLE IF EXISTS nw_5 ;
+
+CREATE TABLE IF NOT EXISTS nw_5 AS
+SELECT  main.*
+        ,coalesce(sec.property_value,main.product_name) AS product_name_eng
+FROM    (
+            SELECT  a.venture_category1_name_en
+                    ,a.venture_category2_name_en
+                    ,a.venture_category3_name_en
+                    ,a.date
+                    ,a.daraz_sku
+                    ,a.product_name
+                    ,a.brand_name
+                    ,a.shop_account_name
+                    ,a.orders
+                    ,a.items
+                    ,a.buyers
+                    ,a.warehouse
+                    ,a.total_platform_discount_usd
+                    ,a.Total_Seller_Discount
+                    ,a.shipping_discount_amount_seller
+                    ,a.shipping_discount_amount_platform
+                    ,a.organic_gmv
+                    ,a.AIV
+                    ,a.AOV
+                    ,a.gmv_usd
+                    ,a.nmv_usd
+                    ,a.asst_gmv_usd
+                    ,a.nmv_items
+                    ,b.uvs
+                    ,b.pvs
+                    ,b.Dau
+                    ,b.stock_available
+                    ,b.Item_Bulky_Flag
+                    ,b.is_fulfilled_by_daraz
+                    ,case 
+                    when a.warehouse = 'OMS-DARAZ-PK-W-100' then 'DRZ PK Karachi'
+                    when a.warehouse = 'OMS-DARAZ-PK-W-101' then 'DRZ PK Lahore'
+                    when a.warehouse = 'OMS-DARAZ-PK-W-102' then 'DRZ PK Islamabad'
+                    when a.warehouse = 'OMS-DARAZ-PK-W-103' then 'DRZ PK Faisalabad'
+                    when a.warehouse = 'OMS-DARAZ-PK-W-104' then 'DRZ PK Peshawar'
+                    when a.warehouse = 'OMS-DARAZ-PK-W-105' then 'DRZ PK Kaarchi-Bulky'
+                    when a.warehouse = 'OMS-DARAZ-PK-W-106' then 'DRZ PK Lahore -Mart'
+                    when a.warehouse = 'OMS-DARAZ-PK-W-110' then 'DRZ PK Karachi-Non-Mart'
+                    else 'Dropship'
+                    end as warehouse_name
+            FROM    (
+                        SELECT  TO_CHAR(fulfillment_create_date,"yyyymm") AS date
+                                ,venture_category1_name_en
+                                ,daraz_sku
+                                ,product_name
+                                ,brand_name
+                                ,venture_category2_name_en
+                                ,venture_category3_name_en
+                                ,shop_account_name
+                                ,warehouse
+                                ,COUNT(DISTINCT sales_order_id) AS orders
+                                ,COUNT(DISTINCT sales_order_item_id) AS items
+                                ,COUNT(DISTINCT buyer_id) AS buyers
+                                ,SUM(discount_amount_by_platform*exchange_rate) AS total_platform_discount_usd
+                                ,SUM(
+                                    CASE    WHEN discount_amount_by_platform = 0 THEN actual_gmv * exchange_rate 
+                                            ELSE NULL 
+                                    END
+                                ) AS organic_gmv
+                                ,SUM(actual_gmv*exchange_rate) AS gmv_usd
+                                ,SUM(actual_gmv*net_item*exchange_rate) AS nmv_usd
+                                ,SUM(actual_gmv*(is_organic-1)*-1*exchange_rate) AS asst_gmv_usd
+                                ,SUM(sales_order_item_id/sales_order_item_id*net_item) AS nmv_items
+                                ,SUM(actual_gmv * exchange_rate) / COUNT(sales_order_item_id) AS AIV
+                                ,SUM(actual_gmv * exchange_rate) / COUNT(DISTINCT sales_order_id) AS AOV
+                                ,COUNT(sales_order_item_id) / COUNT(DISTINCT sales_order_id) AS Average_Basket_Size
+                                ,sum(discount_amount_by_seller * exchange_rate) AS Total_Seller_Discount
+                                ,SUM(
+                                    shipping_discount_amount_seller*exchange_rate
+                                ) AS shipping_discount_amount_seller
+                                ,SUM(
+                                    shipping_discount_amount_platform*exchange_rate
+                                ) AS shipping_discount_amount_platform
+                        FROM    daraz_cdm.dwd_drz_trd_core_df
+                        WHERE   ds = MAX_PT('daraz_cdm.dwd_drz_trd_core_df')
+                        and     TO_CHAR(fulfillment_create_date,"yyyymm") IN (202111,202211)
+                                                 
+                        
+
+                        AND     venture IN ('PK')
+                        AND     venture_category1_name_en IN ('Bedding & Bath', 'Furniture & Décor', 'Kitchen & Dining', 'Laundry & Cleaning', 'Media Music & Books', 'Motors','Sports & Outdoors', 'Stationery & Craft', 'Tools DIY & Outdoor', 'Toys & Games')
+                        --AND     venture_category2_name_en in ('Lighting')
+                        and     shop_account_code in ('PK1NIRU')
+                        --and venture_category1_name_en in ('Toys & Games')
+                        --AND venture_category1_name_en IN ('Home Appliances')
+                        --AND venture_category2_name_en IN ('Kitchen Appliances','Washers & Dryers','Small Kitchen Appliances','Cooling & Heating', 'Generators & Portable Power', 'Irons & Garment Steamers')
+                        AND     is_fulfilled = '1'
+                        GROUP BY TO_CHAR(fulfillment_create_date,"yyyymm")
+                                 ,daraz_sku
+                                 ,product_name
+                                 ,brand_name
+                                 ,venture_category1_name_en
+                                 ,venture_category2_name_en
+                                 ,venture_category3_name_en
+                                 ,shop_account_name
+                                 ,warehouse
+                    ) AS a
+            LEFT JOIN (
+                          SELECT  substr(ds,1,6) AS date
+                                  ,daraz_sku
+                                  ,venture_category1_name_en
+                                  ,venture_category2_name_en
+                                  ,venture_category3_name_en
+                                  ,stock_available
+                                  ,is_fulfilled_by_daraz
+                                  ,COUNT(DISTINCT visitor_id) AS uvs
+                                  ,COUNT(visitor_id) AS pvs
+                                  ,count(DISTINCT utdid) AS Dau
+                                  ,CASE
+                                WHEN Final_Item_Weight > 0 AND Final_Item_Weight <= 3 THEN 'Non-Bulky'
+                                WHEN Final_Item_Weight > 3 AND Final_Item_Weight <= 8 THEN 'Semi-Bulky'
+                                WHEN Final_Item_Weight > 8 AND Final_Item_Weight <= 35 THEN 'Bulky'
+                                WHEN Final_Item_Weight > 35 THEN 'Super-Bulky'
+                                END
+                                AS Item_Bulky_Flag
+                          FROM    (
+                                      SELECT  z.ds
+                                              ,z.daraz_sku
+                                              ,z.visitor_id
+                                              ,z.utdid
+                                              ,y.venture_category1_name_en
+                                              ,y.venture_category2_name_en
+                                              ,y.venture_category3_name_en
+                                              ,y.Volumetric_Item_Weight
+                                              ,y.Catalogue_Item_Weight
+                                              ,Y.is_fulfilled_by_daraz
+                                              ,y.stock_available
+                                              ,CASE WHEN y.Volumetric_Item_Weight > y.Catalogue_Item_Weight THEN y.Volumetric_Item_Weight ELSE y.Catalogue_Item_Weight END AS Final_Item_Weight
+
+                                      FROM    (
+                                                  SELECT  ds
+                                                          ,item_id AS daraz_sku
+                                                          ,visitor_id
+                                                          ,utdid
+                                                  FROM    daraz_cdm.dwd_drz_log_ut_pv_di
+                                                 where substr(ds,1,6) in (202211)
+                                                  AND     Venture = 'PK'
+                                              ) AS z
+                                      LEFT JOIN (
+                                                    SELECT  ds
+                                                            ,venture_category1_name_en
+                                                            ,venture_category2_name_en
+                                                            ,venture_category3_name_en
+                                                            ,daraz_sku
+                                                            ,stock_available
+                                                            ,is_fulfilled_by_daraz
+                                                            ,((product_height * product_length * product_width) / 5000) AS Volumetric_Item_Weight
+                                                            ,product_weight AS Catalogue_Item_Weight
+                                                    FROM    daraz_cdm.dim_drz_prd_sku_core
+                                                    WHERE   ds = MAX_PT('daraz_cdm.dim_drz_prd_sku_core')
+                                                    AND     venture = 'PK'
+                                                ) AS y
+                                      ON      z.daraz_sku = y.daraz_sku
+                                  ) 
+                       where substr(ds,1,6) in (202211)
+                          --AND     Venture = 'PK'
+                          AND     venture_category1_name_en IN ('Bedding & Bath', 'Furniture & Décor', 'Kitchen & Dining', 'Laundry & Cleaning', 'Media Music & Books', 'Motors','Sports & Outdoors', 'Stationery & Craft', 'Tools DIY & Outdoor', 'Toys & Games')
+                          --and venture_category1_name_en in ('Toys & Games')
+                          --AND venture_category1_name_en IN ('Home Appliances')
+                          --AND venture_category2_name_en IN ('Kitchen Appliances','Washers & Dryers','Small Kitchen Appliances','Cooling & Heating', 'Generators & Portable Power', 'Irons & Garment Steamers')
+                          GROUP BY substr(ds,1,6)
+                                   ,venture_category1_name_en
+                                   ,daraz_sku
+                                   ,venture_category2_name_en
+                                   ,venture_category3_name_en
+                                   ,stock_available
+                                   ,Final_item_weight
+                                   ,is_fulfilled_by_daraz
+            ) AS b
+            ON      a.date = b.date    --a.venture = b.venture
+            AND     a.daraz_sku = b.daraz_sku
+            AND     a.venture_category1_name_en = b.venture_category1_name_en
+            AND     a.venture_category2_name_en = b.venture_category2_name_en
+            AND     a.venture_category3_name_en = b.venture_category3_name_en
+        ) AS main
+LEFT JOIN (
+              SELECT  daraz_sku
+                      ,property_value
+              FROM    daraz_cdm.dim_drz_prd_sku_attributes
+              WHERE   DS = MAX_PT("daraz_cdm.dim_drz_prd_sku_attributes")
+              AND     VENTURE = 'PK'
+              AND     property_name = 'name_en'
+          ) AS sec
+ON      main.daraz_sku = sec.daraz_sku
+;
