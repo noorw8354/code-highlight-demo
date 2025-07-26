@@ -1,0 +1,475 @@
+select distinct a.*
+,cal.*
+,usr.*
+,c.MassEmail_consent, c.Call_consent,  c.RepEmail_consent, c.WhatsApp_consent, c.OtherChannel_consent,  c.consented , c.veeva_consent
+--,dup.Territory_Code as call_territory
+--,case when dup.duplications = 0 then 'Blank'
+--      when dup.duplications > 1 then 'duplicates'
+--	  else 'single' end as duplicate_territories
+,terr.city
+,terr.address_full
+,case when terr.city is null then 'Blank' else 'Valid' end as city_check
+,case when terr.address_full is null then 'Blank' else 'Valid' end as address_check
+,dup.Assigned_Territory_Code
+,dup.duplications
+,case when dup.duplications is null then 'Blank'
+      when dup.duplications > 1 then 'Duplicate' else 'Single'
+      end as Territory_Check
+into #temp12
+from
+(Select Country_Code, s.Account_Id, FullName as HCP_Name, Specialty_1, Segment, Account_Type, Email, Email2, Whatsapp, Phone,  phone2,  Category, Salutation, IsPersonAccount, Nvs_Inactive
+
+---SALUTATION_CHECK
+
+,case 
+	when Salutation IS NULL then 'Blank'
+	when Salutation in ('Dr.', 'Mr.', 'Ms.', 'Mrs.') then 'Valid' else 'Invalid' end as Salutation_check
+
+---SPECIALTY_CHECK
+
+,case 
+	when specialty_1 IS NULL then 'Blank'
+	when specialty_1 in ('General dentist','General/Family Doctor','Pediatrician/Neonatologist','Gynaecologist/Obstetrician','Orthopaedic Surgeon','Pharmacist','ENT/Otorhinolaryngologist','Neurologist','Dermatologist') then 'Valid' else 'Invalid' end as specialty_check
+
+---Category_CHECK
+
+,case 
+	when Category IS NULL then 'Blank'
+	when Category in ('Wellness', 'Medical', 'Dental') then 'Valid' else 'Invalid' end as Category_check
+
+---SEGMENT_CHECK
+
+,case 
+	when segment IS NULL then 'Blank'  
+	when segment in ('G','H','M','P') then 'Valid' else 'Invalid' end as segment_check
+
+---ACCOUNT_CHECK
+
+,case 
+	when account_type IS NULL then 'Blank' 
+	when account_type in ('Dentist','Assigned Physician','Pharmacist') then 'Valid' else 'Invalid' end as account_type_check
+
+---EMAIL CHECK
+ 
+ ,CASE
+        WHEN email IS NULL THEN 'Blank'
+
+---DUPLICATE_EMAIL_CHECK
+
+		WHEN count(s.Account_Id) over (partition by email) > 1 then 'Duplicate' 
+
+---Other Checks
+
+        WHEN CHARINDEX('@', email) = 0 THEN 'Missing @'
+        WHEN email NOT LIKE '%.com%' AND email NOT LIKE '%.net%' AND email NOT LIKE '%.org%' THEN 'Invalid Domain'
+        WHEN email LIKE '% %' THEN 'Space Found'
+        WHEN CHARINDEX('.', email) = 0 OR CHARINDEX('@', email) = 0 THEN 'Missing . or @'
+        WHEN email LIKE '%[ ,#$%^&*()=]%' THEN 'Invalid Characters'
+        WHEN LOWER(email) LIKE '%aaa%' OR
+             LOWER(email) LIKE '%111%' OR
+             LOWER(email) LIKE '%xyz%' OR
+             LOWER(email) LIKE '%qwerty%' THEN 'Fabricated'
+        WHEN LOWER(email) LIKE '%test%' OR LOWER(email) LIKE '%fake%' THEN 'Suspicious'
+        WHEN LEN(email) < 15 OR LEN(email) > 40 THEN 'Invalid Length'
+        WHEN email NOT LIKE '%.com%' AND email NOT LIKE '%.org%' AND email NOT LIKE '%.edu%' THEN 'Invalid TLD'
+        WHEN email LIKE '%.%@%' OR email LIKE '%..%' THEN 'Consecutive Dots Found'
+        WHEN email LIKE '.%' OR email LIKE '%.com.' THEN 'Leading/Trailing Dot Found'
+        WHEN PATINDEX('%[0-9]%', LEFT(email, CHARINDEX('@', email) - 1)) > 0 THEN 'Numeric Username'
+        WHEN LOWER(SUBSTRING(email, CHARINDEX('@', email) + 1, 100)) IN ('gmail.com', 'yahoo.com') THEN 'Personal'
+        WHEN LOWER(LEFT(email, CHARINDEX('@', email) - 1)) IN ('info','support','sales','contact','admin','help','team','service') THEN 'General Email'
+        ELSE 'Valid Email'
+    END AS email_check
+
+
+---PHONE_NUMBER_CHECK
+
+,CASE
+    WHEN phone IS NULL OR phone = '' THEN 'Invalid - Empty'
+
+---DUPLICATE_PHONE_NUMBERS_CHECK
+
+	WHEN count(s.Account_Id) over (partition by phone) > 1 then 'Duplicate'
+
+--Other Checks
+
+    WHEN phone LIKE '%[^0-9+ -]%' THEN 'Invalid - Contains non-numeric characters'
+    WHEN phone LIKE '% %' THEN 'Invalid - Contains space'
+    WHEN phone LIKE '%--%' THEN 'Invalid - Consecutive dashes'
+    WHEN phone LIKE '%++%' THEN 'Invalid - Consecutive pluses'
+    WHEN phone LIKE '%[a-zA-Z]%' THEN 'Invalid - Contains letters'
+    WHEN phone LIKE '%.%' THEN 'Invalid - Contains dot'
+    WHEN phone LIKE '%@%' THEN 'Invalid - Contains @'
+    WHEN phone LIKE '%+%' AND LEFT(phone, 1) <> '+' THEN 'Invalid - Plus not at beginning'
+    WHEN LEN(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', '')) < 7 THEN 'Invalid - Too short'
+    WHEN LEN(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', '')) > 15 THEN 'Invalid - Too long'
+
+    -- Country-specific valid logic
+    WHEN RIGHT(MarketCodeDerived, 2) = 'EG' AND phone LIKE '20%' AND LEN(phone) = 12 AND SUBSTRING(phone, 3, 2) IN ('10','11','12','15') THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'DZ' AND phone LIKE '213%' AND LEN(phone) = 12 AND SUBSTRING(phone, 4, 1) = '5' THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'MA' AND phone LIKE '212%' AND LEN(phone) = 12 AND SUBSTRING(phone, 4, 1) IN ('6','7') THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'PK' AND phone LIKE '92%' AND LEN(phone) = 12 AND SUBSTRING(phone, 3, 1) = '3' THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'SA' AND phone LIKE '966%' AND LEN(phone) = 12 AND SUBSTRING(phone, 4, 1) = '5' THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'ZA' AND phone LIKE '27%' AND LEN(phone) = 11 AND SUBSTRING(phone, 3, 1) IN ('6','7','8') THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'TR' AND phone LIKE '90%' AND LEN(phone) = 12 AND SUBSTRING(phone, 3, 1) = '5' THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'AE' AND phone LIKE '971%' AND LEN(phone) = 12 AND SUBSTRING(phone, 4, 2) IN ('50','55','56','58') THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'BH' AND phone LIKE '973%' AND LEN(phone) = 11 AND SUBSTRING(phone, 4, 1) IN ('3','6') THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'JO' AND phone LIKE '962%' AND LEN(phone) = 12 AND SUBSTRING(phone, 4, 1) = '7' THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'KW' AND phone LIKE '965%' AND LEN(phone) = 11 AND SUBSTRING(phone, 4, 1) IN ('5','6','9') THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'LB' AND phone LIKE '961%' AND LEN(phone) = 11 AND CAST(SUBSTRING(phone, 4, 2) AS INT) BETWEEN 70 AND 79 THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'OM' AND phone LIKE '968%' AND LEN(phone) = 11 AND SUBSTRING(phone, 4, 1) = '9' THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'QA' AND phone LIKE '974%' AND LEN(phone) = 11 AND SUBSTRING(phone, 4, 1) IN ('3','6','7') THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'BJ' AND phone LIKE '229%' AND LEN(phone) = 11 AND SUBSTRING(phone, 4, 1) = '9' THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'CD' AND phone LIKE '243%' AND LEN(phone) = 12 AND SUBSTRING(phone, 4, 1) IN ('8','9') THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'CG' AND phone LIKE '242%' AND LEN(phone) = 12 AND SUBSTRING(phone, 4, 1) = '6' THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'CI' AND phone LIKE '225%' AND LEN(phone) = 11 AND SUBSTRING(phone, 4, 1) IN ('0','4','5','6','7') THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'CM' AND phone LIKE '237%' AND LEN(phone) = 11 AND SUBSTRING(phone, 4, 1) IN ('6','7') THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'GA' AND phone LIKE '241%' AND LEN(phone) = 12 AND SUBSTRING(phone, 4, 1) = '6' THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'GN' AND phone LIKE '224%' AND LEN(phone) = 12 AND SUBSTRING(phone, 4, 1) = '6' THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'KE' AND phone LIKE '254%' AND LEN(phone) = 12 AND SUBSTRING(phone, 4, 1) = '7' THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'MU' AND phone LIKE '230%' AND LEN(phone) = 11 AND SUBSTRING(phone, 4, 1) = '5' THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'NG' AND phone LIKE '234%' AND LEN(phone) = 13 AND SUBSTRING(phone, 4, 1) IN ('7','8','9') THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'SN' AND phone LIKE '221%' AND LEN(phone) = 12 AND SUBSTRING(phone, 4, 1) IN ('7','8') THEN 'Valid Mobile Number'
+    WHEN RIGHT(MarketCodeDerived, 2) = 'TG' AND phone LIKE '228%' AND LEN(phone) = 11 AND SUBSTRING(phone, 4, 1) = '9' THEN 'Valid Mobile Number'
+
+    -- Catch-all invalid if no match found
+    ELSE 'Invalid'
+END AS phone_status
+
+
+---WHATSAPP_CHECK
+
+,CASE 
+    WHEN whatsapp IS NULL OR whatsapp = '' THEN 'Invalid - Empty'
+
+---DUPLICATE_WHATSAPP_CHECK
+
+	WHEN count(s.Account_Id) over (partition by whatsapp) > 1 then 'Duplicate'
+
+---Other Checks
+
+    WHEN whatsapp LIKE '%[^0-9+]%' THEN 'Invalid - Contains non-numeric characters'
+    WHEN whatsapp LIKE '%[a-zA-Z]%' THEN 'Invalid - Contains letters'
+    WHEN whatsapp LIKE '%.%' THEN 'Invalid - Contains dot'
+    WHEN whatsapp LIKE '%@%' THEN 'Invalid - Contains @'
+    WHEN whatsapp LIKE '%--%' THEN 'Invalid - Double dashes'
+    WHEN whatsapp LIKE '%++%' THEN 'Invalid - Double pluses'
+    WHEN whatsapp LIKE '% %' THEN 'Invalid - Contains spaces'
+    WHEN whatsapp LIKE '%[()]%' THEN 'Invalid - Contains brackets'
+    WHEN whatsapp LIKE '%+%' AND LEFT(whatsapp, 1) <> '+' THEN 'Invalid - Plus not at start'
+    WHEN LEN(REPLACE(REPLACE(whatsapp, '+', ''), ' ', '')) < 10 THEN 'Invalid - Too short'
+    WHEN LEN(REPLACE(REPLACE(whatsapp, '+', ''), ' ', '')) > 15 THEN 'Invalid - Too long'
+	
+---WHATSAPP_COUNTRY_CHECK
+
+	WHEN right(MarketCodeDerived,2) = 'EG' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 2) = '20' AND len(whatsapp) = 12 AND SUBSTRING(whatsapp, 3, 2) IN ('10', '11', '12', '15') THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'DZ' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '213' AND len(whatsapp) = 12 AND SUBSTRING(whatsapp, 4, 1) = '5' THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'MA' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '212' AND len(whatsapp) = 12 AND SUBSTRING(whatsapp, 4, 1) IN ('6', '7') THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'PK' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 2) = '92' AND len(whatsapp) = 12 AND SUBSTRING(whatsapp, 3, 1) = '3' THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'SA' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '966' AND len(whatsapp) = 12 AND SUBSTRING(whatsapp, 4, 1) = '5' THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'ZA' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 2) = '27' AND len(whatsapp) = 11 AND SUBSTRING(whatsapp, 3, 1) IN ('6', '7', '8') THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'TR' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 2) = '90' AND len(whatsapp) = 12 AND SUBSTRING(whatsapp, 3, 1) = '5' THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'AE' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '971' AND len(whatsapp) = 12 AND SUBSTRING(whatsapp, 4, 2) IN ('50', '55', '56', '58') THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'BH' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '973' AND len(whatsapp) = 11 AND SUBSTRING(whatsapp, 4, 1) IN ('3', '6') THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'JO' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '962' AND len(whatsapp) = 12 AND SUBSTRING(whatsapp, 4, 1) = '7' THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'KW' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '965' AND len(whatsapp) = 11 AND SUBSTRING(whatsapp, 4, 1) IN ('5', '6', '9') THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'LB' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '961' AND len(whatsapp) = 11 AND CAST(SUBSTRING(whatsapp, 4, 2) AS INT) BETWEEN 70 AND 79 THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'OM' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '968' AND len(whatsapp) = 11 AND SUBSTRING(whatsapp, 4, 1) = '9' THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'QA' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '974' AND len(whatsapp) = 11 AND SUBSTRING(whatsapp, 4, 1) IN ('3', '6', '7') THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'BJ' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '229' AND len(whatsapp) = 11 AND SUBSTRING(whatsapp, 4, 1) = '9' THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'CD' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '243' AND len(whatsapp) = 12 AND SUBSTRING(whatsapp, 4, 1) IN ('8', '9') THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'CG' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '242' AND len(whatsapp) = 12 AND SUBSTRING(whatsapp, 4, 1) = '6' THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'CI' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '225' AND len(whatsapp) = 11 AND SUBSTRING(whatsapp, 4, 1) IN ('0', '4', '5', '6', '7') THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'CM' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '237' AND len(whatsapp) = 11 AND SUBSTRING(whatsapp, 4, 1) IN ('6', '7') THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'GA' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '241' AND len(whatsapp) = 12 AND SUBSTRING(whatsapp, 4, 1) = '6' THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'GN' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '224' AND len(whatsapp) = 12 AND SUBSTRING(whatsapp, 4, 1) = '6' THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'KE' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '254' AND len(whatsapp) = 12 AND SUBSTRING(whatsapp, 4, 1) = '7' THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'MU' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '230' AND len(whatsapp) = 11 AND SUBSTRING(whatsapp, 4, 1) = '5' THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'NG' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '234' AND len(whatsapp) = 13 AND SUBSTRING(whatsapp, 4, 1) IN ('7', '8', '9') THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'SN' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '221' AND len(whatsapp) = 12 AND SUBSTRING(whatsapp, 4, 1) IN ('7', '8') THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    WHEN right(MarketCodeDerived,2) = 'TG' THEN 
+        CASE 
+            WHEN whatsapp IS NULL THEN 'Blank'
+            WHEN LEFT(whatsapp, 3) = '228' AND len(whatsapp) = 11 AND SUBSTRING(whatsapp, 4, 1) = '9' THEN 'Valid Mobile Number'
+            ELSE 'Invalid or Landline'
+        END
+    ELSE 'Invalid'
+    END AS whatsapp_status
+
+from [EPR_Optimized].[Dim_FSFA_Account] s 
+
+
+---last 90 days calls
+
+--Inner join
+
+--(select distinct Account_Id from EPR_Optimized.Fact_FSFA_Call
+--where (cast(call_date as date) >= DATEADD(day,-90,getdate())
+--AND Call_Status LIKE ('Submitted_vod')) and ((Territory_Code LIKE '%21.%') OR (Territory_Code LIKE '%22.%')) AND (Territory_Code IS NOT NULL)
+--AND  IsDeleted = 'False'
+--) as b
+--on s.Account_Id = b.Account_Id
+
+where IsDeleted = 'False'
+and IsPersonAccount = 'True'
+--and phone = '923705634732'
+) as a
+
+inner join
+
+(select distinct Account_Id as HCP_Id, Owner_Id ,Territory_Code as Calling_Territory_Code 
+,count(call_id) as Calls
+from EPR_Optimized.Fact_FSFA_Call
+where (cast(call_date as date) >= DATEADD(day,-90,getdate())
+AND Call_Status LIKE ('Submitted_vod')) and ((Territory_Code LIKE '%21.%') OR (Territory_Code LIKE '%22.%')) AND (Territory_Code IS NOT NULL)
+AND  IsDeleted = 'False'
+group by Account_Id, Owner_Id ,Territory_Code
+) as cal
+
+on a.Account_Id = cal.HCP_Id
+
+left join
+
+-----user part 
+
+(
+Select f.*, g.fullname as Manager_Name
+from
+(Select distinct user_id, user_name, Fullname as Rep_Name, Department, Manager_Id from [EPR_Optimized].[Dim_FSFA_User] ) f
+left join 
+(Select  distinct Fullname, User_Id from [EPR_Optimized].[Dim_FSFA_User]) g
+on f.Manager_Id = g.User_Id
+) as usr
+
+on cal.owner_id = usr.User_Id
+
+---consent part
+
+left join
+
+(SELECT  
+distinct CONS_B.Account_Id
+,max(case when Master_Consent_Type = 'RepEmail' then 'Y' else 'N' end) as RepEmail_consent
+,max(case when Master_Consent_Type = 'Call' then 'Y' else 'N' end) as Call_consent
+,max(case when Master_Consent_Type = 'MassEmail' then 'Y' else 'N' end) as MassEmail_consent
+,max(case when Master_Consent_Type = 'WhatsApp' then 'Y' else 'N' end) as WhatsApp_consent
+,max(case when Master_Consent_Type = 'OtherChannel' then 'Y' else 'N' end) as OtherChannel_consent
+,case when max(case when Master_Consent_Type = 'RepEmail' then 'Y' else 'N' end) = 'Y' OR max(case when Master_Consent_Type = 'MassEmail' then 'Y' else 'N' end) = 'Y' then 'Y' Else 'N' end as veeva_consent
+--,STRING_AGG(MAster_Consent_Type,'/') as MAster_Consent_Type
+--,len(STRING_AGG(MAster_Consent_Type,'/')) as MAster_Consent_Type_l
+--,len(REPLACE(STRING_AGG(MAster_Consent_Type,'/'), '/','')) as helo
+--,len(STRING_AGG(MAster_Consent_Type,'/')) - len(REPLACE(STRING_AGG(MAster_Consent_Type,'/'), '/','')) as diff
+--,STRING_AGG(Opt_Type,'/') as Opt_Type
+--,STRING_AGG(Multi_Channel_Consent_Id,'/') as Multi_Channel_Consent_Id
+--,STRING_AGG(Opt_Expiration_Date,'/') as Opt_Expiration_Date
+--,STRING_AGG(Captured_Date,'/') as Captured_Date
+,case when Market in  ('GNE', 'Pakistan', 'KSA', 'RSA', 'Türkiye') and len(STRING_AGG(MAster_Consent_Type,'/')) - len(REPLACE(STRING_AGG(MAster_Consent_Type,'/'),'/','')) >= 3 then 'Yes'
+      when Market in  ('N Africa', 'SSA') and STRING_AGG(MAster_Consent_Type,'/') like '%RepEmail%' then 'Yes'
+else 'No' end as consented
+
+FROM
+(
+SELECT CONS_A.* 
+, ROW_NUMBER() Over (PArtition by Account_ID, MAster_Consent_Type order by captured_Date DESC, Multi_Channel_Consent_Name DESC) AS RNK  FROM
+--,case when Market in  ('N Africa', 'Pakistan', 'SSA') and Master_Consent_Type = 'RepEmail' and Opt_Type = 'Opt_In_vod' then 'Yes' 
+--      when Market in  ('GNE', 'KSA', 'RSA', 'Türkiye') and Master_Consent_Type IN  ('RepEmail', 'WhatsApp', 'Call', 'MassEmail') and Opt_Type = 'Opt_In_vod' then 'Yes' 
+--	  ELSE ' ' end as Consent
+
+(
+Select A.*,B.DeveloperName ,
+CASE WHEN B.DeveloperName ='Approved_Email_vod' and A.sub_Channel_Key IS NULL THEN 'RepEmail'
+WHEN (B.DeveloperName ='gsk_core_ED_ReadOnly_Consent' or B.DeveloperName ='Approved_Email_vod') and A.sub_Channel_Key in('sms','instantMsg') THEN 'WhatsApp'
+WHEN (B.DeveloperName ='gsk_core_ED_ReadOnly_Consent' or B.DeveloperName ='Approved_Email_vod')  and A.sub_Channel_Key in('audioCall','videoCall') THEN 'Call' 
+WHEN (B.DeveloperName ='gsk_core_ED_ReadOnly_Consent' or B.DeveloperName ='Approved_Email_vod')  and A.Sub_channel_Key in('marketingEmail') THEN 'MassEmail' ELSE 'Other_channel' END Master_Consent_Type
+,CASE 
+    WHEN right(A.MarketCodeDerived,2) IN ('DZ', 'EG', 'MA') THEN 'N Africa'
+    WHEN right(A.MarketCodeDerived,2) IN ('BH', 'JO', 'KW', 'LB', 'OM', 'QA', 'AE') THEN 'GNE'
+    WHEN right(A.MarketCodeDerived,2) IN ('BJ', 'CM', 'CG', 'CD', 'GA', 'CI', 'KE', 'MU', 'NG', 'SN', 'TG') THEN 'SSA'
+    WHEN right(A.MarketCodeDerived,2) = 'SA' THEN 'KSA'
+    WHEN right(A.MarketCodeDerived,2) = 'PK' THEN 'Pakistan'
+    WHEN right(A.MarketCodeDerived,2) = 'ZA' THEN 'RSA'
+    WHEN right(A.MarketCodeDerived,2) = 'TR' THEN 'Türkiye'
+    ELSE 'Other'
+END AS Market
+from [EPR_Optimized].[Fact_FSFA_Multichannal_Consent] A
+INNER JOIN [EPR_Optimized].[Dim_FSFA_RecordType] B on A.RecordTypeId = B.RecordTypeId
+where 
+IsDeleted='False'
+AND  Account_Id = '0010o00002AjejHAAR'
+) CONS_A
+) CONS_B 
+where RNK='1' and Opt_Type='Opt_In_vod' 
+and (TRY_CONVERT(DATE, Opt_Expiration_Date) >  GETDATE() or Opt_Expiration_Date is NULL)
+group by 
+CONS_B.Account_Id
+--,CONS_B.Master_Consent_Type
+,CONS_B.Market
+) as c
+on a.Account_Id = c.Account_Id
+
+
+---account territory duplications
+
+left join 
+
+(Select Account_Id
+,name as Assigned_Territory_Code
+,count(*) over (partition by account_id) as duplications
+from
+(Select Account_Id from [EPR_Optimized].[Dim_FSFA_Account]) as a 
+left join
+(Select ObjectId, Territory2Id from [EPR_Optimized].[Dims_FSFA_ObjectTerritory2Association]) as b
+on a.account_id = b.objectid
+left join
+(Select id, name from EPR_Optimized.Dim_FSFA_Territory2) as c
+on b.territory2id = c.id
+group by account_id 
+,name) as dup
+
+on a.account_id = dup.Account_Id
+
+left join 
+
+(select distinct account_vod__c, address_full, city from [EPR_Optimized].[Dim_FSFA_Address] where IsDeleted = 'False' and Primary_Code = 'True'
+) as terr 
+
+on a.account_id = terr.account_vod__c
+
+
+
+;
+
+Select * from #temp12
+
+
+
+
+
+
+
+
+
