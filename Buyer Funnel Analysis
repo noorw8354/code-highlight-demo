@@ -1,0 +1,158 @@
+DROP TABLE IF EXISTS nw_9
+;
+
+CREATE TABLE IF NOT EXISTS nw_9 AS
+SELECT  a.venture_category1_name_en
+        ,a.venture_category2_name_en
+        ,a.venture_category3_name_en
+        ,a.business_area
+        ,a.business_type
+        ,a.seller_id
+        ,a.shop_account_code
+        ,a.shop_account_name
+        ,a.date
+        ,a.orders
+        ,a.items
+        ,a.buyers
+        ,a.total_platform_discount_usd
+        ,a.Total_Seller_Discount
+        ,a.shipping_discount_amount_seller
+        ,a.shipping_discount_amount_platform
+        ,a.organic_gmv
+        ,a.AIV
+        ,a.AOV
+        ,a.gmv_usd
+        ,a.nmv_usd
+        ,a.asst_gmv_usd
+        ,a.nmv_items
+        ,b.uvs
+        ,b.pvs
+        ,b.a2c
+        ,b.Dau
+        ,a.selling_assortment
+FROM    (
+            SELECT  TO_CHAR(fulfillment_create_date,"yyyy") AS date
+                    ,venture_category1_name_en
+                    ,venture_category2_name_en
+                    ,venture_category3_name_en
+                    ,business_area
+                    ,business_type
+                    ,seller_id
+                    ,shop_account_code
+                    ,shop_account_name
+                    ,SUM(actual_gmv * exchange_rate) AS gmv_usd
+                    ,SUM(actual_gmv * net_item * exchange_rate) AS nmv_usd
+                    ,COUNT(DISTINCT sales_order_id) AS orders
+                    ,COUNT(DISTINCT sales_order_item_id) AS items
+                    ,COUNT(DISTINCT buyer_id) AS buyers
+                    ,SUM(discount_amount_by_platform * exchange_rate) AS total_platform_discount_usd
+                    ,SUM(discount_amount_by_seller * exchange_rate) AS Total_Seller_Discount
+                    ,SUM(collectible_discount_amount_platform * exchange_rate) AS collectible_discount_amount_platform
+                    ,SUM(collectible_discount_amount_seller * exchange_rate) AS collectible_discount_amount_seller
+                    ,SUM(shipping_discount_amount_seller * exchange_rate) AS shipping_discount_amount_seller
+                    ,SUM(shipping_discount_amount_platform * exchange_rate) AS shipping_discount_amount_platform
+                    ,SUM(CASE WHEN discount_amount_by_platform = 0 THEN actual_gmv * exchange_rate ELSE NULL END) AS organic_gmv
+                    ,COUNT(CASE WHEN discount_amount_by_platform = 0 THEN buyer_id ELSE NULL END) AS organic_buyer
+                    ,SUM(actual_gmv * (is_organic - 1) * -1 * exchange_rate) AS asst_gmv_usd
+                    ,SUM(sales_order_item_id / sales_order_item_id * net_item) AS nmv_items
+                    ,SUM(actual_gmv * exchange_rate) / COUNT(sales_order_item_id) AS AIV
+                    ,SUM(actual_gmv * exchange_rate) / COUNT(DISTINCT sales_order_id) AS AOV
+                    ,COUNT(sales_order_item_id) / COUNT(DISTINCT sales_order_id) AS Average_Basket_Size
+                    ,COUNT(DISTINCT product_id) AS selling_assortment
+            FROM    daraz_cdm.dwd_drz_trd_core_df
+            WHERE   ds = MAX_PT('daraz_cdm.dwd_drz_trd_core_df')
+            AND     TO_CHAR(fulfillment_create_date,"yyyy") IN (2023)
+            AND     venture IN ('PK')
+            AND     unit_price > 1 --AND     venture_category1_name_en IN ('Bedding & Bath','Furniture & Décor','Kitchen & Dining','Laundry & Cleaning','Media Music & Books','Motors','Sports & Outdoors','Stationery & Craft','Tools DIY & Outdoor','Toys & Games','Packaging Material','Charity and Donation') --AND     venture_category1_name_en IN ('Bedding & Bath', 'Furniture & Décor', 'Kitchen & Dining', 'Laundry & Cleaning','Tools DIY & Outdoor')
+            AND     venture_category1_name_en in ('Stationary & Craft')
+            and     shop_account_code in ('PK1NBBF')
+            --AND     venture_category1_name_en IN ('Media Music & Books','Sports & Outdoors','Stationery & Craft','Toys & Games') --AND     venture_category1_name_en IN ('Bedding & Bath', 'Furniture & Décor', 'Kitchen & Dining', 'Laundry & Cleaning','Tools DIY & Outdoor')
+            --AND venture_category2_name_en IN ('Kitchen Appliances','Washers & Dryers','Small Kitchen Appliances','Cooling & Heating', 'Generators & Portable Power', 'Irons & Garment Steamers')
+            AND     is_fulfilled = '1'
+            GROUP BY TO_CHAR(fulfillment_create_date,"yyyy")
+                     ,venture_category1_name_en
+                     ,venture_category2_name_en
+                     ,venture_category3_name_en
+                     ,business_area
+                     ,business_type
+                     ,seller_id
+                     ,shop_account_code
+                     ,shop_account_name
+        ) AS a
+LEFT JOIN   (
+                SELECT  SUBSTR(ds,1,4) AS date
+                        ,venture_category1_name_en
+                        ,venture_category2_name_en
+                        ,venture_category3_name_en
+                        ,seller_id
+                        ,COUNT(DISTINCT visitor_id) AS uvs
+                        ,COUNT(visitor_id) AS pvs
+                        ,COUNT(DISTINCT utdid) AS Dau
+                        ,count(distinct user_id) as a2c
+                FROM    (
+                            SELECT  m.*
+                                    ,n.user_id
+                            FROM    (
+                                        SELECT  z.ds
+                                                ,z.daraz_sku
+                                                ,z.visitor_id
+                                                ,z.utdid
+                                                ,y.venture_category1_name_en
+                                                ,y.venture_category2_name_en
+                                                ,y.venture_category3_name_en
+                                                ,y.product_id
+                                                ,y.business_area
+                                                ,y.business_type
+                                                ,y.seller_id
+                                        FROM    (
+                                                    SELECT  ds
+                                                            ,item_id AS daraz_sku
+                                                            ,visitor_id
+                                                            ,utdid
+                                                    FROM    daraz_cdm.dwd_drz_log_ut_pv_di
+                                                    WHERE   SUBSTR(ds,1,4) IN (2023)
+                                                    AND     Venture = 'PK'
+                                                ) AS z
+                                        LEFT JOIN   (
+                                                        SELECT  ds
+                                                                ,daraz_sku
+                                                                ,venture_category1_name_en
+                                                                ,venture_category2_name_en
+                                                                ,venture_category3_name_en
+                                                                ,business_type
+                                                                ,business_area
+                                                                ,product_id
+                                                                ,seller_id
+                                                        FROM    daraz_cdm.dim_drz_prd_sku_core
+                                                        WHERE   ds = MAX_PT('daraz_cdm.dim_drz_prd_sku_core')
+                                                        AND     venture = 'PK'
+                                                    ) AS y
+                                        ON      z.daraz_sku = y.daraz_sku
+                                    ) AS m
+                            LEFT JOIN   (
+                                            SELECT  ds
+                                                    ,daraz_sku
+                                                    ,user_id
+                                            FROM    daraz_cdm.dwd_drz_trd_cart_ent_di
+                                            WHERE   SUBSTR(ds,1,4) IN (2023)
+                                        ) AS n
+                            ON      m.daraz_sku = n.daraz_sku
+                            AND     m.ds = n.ds
+                        ) 
+                WHERE   SUBSTR(ds,1,4) IN (2023) --AND     Venture = 'PK'
+                --AND     venture_category1_name_en IN ('Bedding & Bath', 'Furniture & Décor', 'Kitchen & Dining', 'Laundry & Cleaning','Tools DIY & Outdoor')
+                --AND     venture_category1_name_en IN ('Media Music & Books','Sports & Outdoors','Stationery & Craft','Toys & Games') --AND     venture_category1_name_en IN ('Bedding & Bath','Furniture & Décor','Kitchen & Dining','Laundry & Cleaning','Media Music & Books','Motors','Sports & Outdoors','Stationery & Craft','Tools DIY & Outdoor','Toys & Games','Packaging Material','Charity and Donation') --and venture_category1_name_en in ('Motors')
+                AND venture_category1_name_en IN ('Stationary & Craft')
+                --AND venture_category2_name_en IN ('Kitchen Appliances','Washers & Dryers','Small Kitchen Appliances','Cooling & Heating', 'Generators & Portable Power', 'Irons & Garment Steamers')
+                GROUP BY SUBSTR(ds,1,4)
+                         ,venture_category1_name_en
+                         ,venture_category2_name_en
+                         ,venture_category3_name_en
+                         ,seller_id
+            ) AS b
+ON      a.date = b.date --a.venture = b.venture
+AND     a.venture_category1_name_en = b.venture_category1_name_en
+AND     a.venture_category2_name_en = b.venture_category2_name_en
+AND     a.venture_category3_name_en = b.venture_category3_name_en
+AND     a.seller_id = b.seller_id
+;
