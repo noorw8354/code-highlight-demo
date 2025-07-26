@@ -1,0 +1,431 @@
+DROP TABLE IF EXISTS nw_23
+;
+
+CREATE TABLE IF NOT EXISTS nw_23 AS
+SELECT  main.*
+,'HD' as marker
+        ,COALESCE(sec.property_value,main.product_name) AS product_name_eng
+FROM    (
+            SELECT  b.venture_category1_name_en
+                    ,b.venture_category2_name_en
+                    ,b.venture_category3_name_en
+                    --,b.date
+                    ,b.daraz_sku
+                    ,b.product_id
+                    ,b.product_name
+                    ,b.brand_name
+                    ,b.shop_account_name
+                    ,b.Current_price
+                    ,a.orders
+                    ,a.items
+                    ,a.lead_time
+                    ,a.buyers
+                    ,a.total_platform_discount_usd
+                    ,a.Total_Seller_Discount
+                    ,a.shipping_discount_amount_seller
+                    ,a.shipping_discount_amount_platform
+                    ,a.collectible_discount_amount_platform
+                    ,a.collectible_discount_amount_seller
+                    ,a.voucher_discount_amount_platform
+                    ,a.voucher_discount_amount_seller
+                    ,a.organic_gmv
+                    ,a.AIV
+                    ,a.AOV
+                    ,a.gmv_usd
+                    ,a.nmv_usd
+                    ,a.asst_gmv_usd
+                    ,a.nmv_items
+                    ,a.selling_assortment
+                    ,a.selling_sellers
+                    ,b.seller_short_code
+                    ,b.uvs
+                    ,b.pvs
+                    ,b.Dau
+                    ,b.a2c
+                    ,b.stock_in
+            FROM    (
+                        SELECT  --TO_CHAR(fulfillment_create_date,"yyyymm") AS date
+                                venture_category1_name_en
+                                ,daraz_sku
+                                ,product_id
+                                ,product_name
+                                ,brand_name
+                                ,venture_category2_name_en
+                                ,venture_category3_name_en
+                                ,shop_account_name
+                                ,AVG(DATEDIFF(delivery_communicate_date,order_create_date,'mi') / (
+                                            60 * 24
+                                )) AS lead_time
+                                ,AVG(list_price) AS list_price
+                                ,AVG(unit_price) AS unit_price
+                                ,AVG(paid_price) AS paid_price
+                                ,COUNT(DISTINCT sales_order_id) AS orders
+                                ,COUNT(DISTINCT sales_order_item_id) AS items
+                                ,COUNT(DISTINCT buyer_id) AS buyers
+                                ,SUM(discount_amount_by_platform * exchange_rate) AS total_platform_discount_usd
+                                ,SUM(CASE WHEN discount_amount_by_platform = 0 THEN actual_gmv * exchange_rate ELSE NULL END) AS organic_gmv
+                                ,COUNT(CASE WHEN discount_amount_by_platform = 0 THEN buyer_id ELSE NULL END) AS organic_buyer
+                                ,SUM(actual_gmv * exchange_rate) AS gmv_usd
+                                ,SUM(actual_gmv * net_item * exchange_rate) AS nmv_usd
+                                ,SUM(actual_gmv * (is_organic - 1) * -1 * exchange_rate) AS asst_gmv_usd
+                                ,SUM(sales_order_item_id / sales_order_item_id * net_item) AS nmv_items
+                                ,SUM(actual_gmv * exchange_rate) / COUNT(sales_order_item_id) AS AIV
+                                ,SUM(actual_gmv * exchange_rate) / COUNT(DISTINCT sales_order_id) AS AOV
+                                ,COUNT(sales_order_item_id) / COUNT(DISTINCT sales_order_id) AS Average_Basket_Size
+                                ,SUM(discount_amount_by_seller * exchange_rate) AS Total_Seller_Discount
+                                ,SUM(voucher_discount_amount_platform * exchange_rate) AS voucher_discount_amount_platform
+                                ,SUM(voucher_discount_amount_seller * exchange_rate) AS voucher_discount_amount_seller
+                                ,SUM(collectible_discount_amount_platform) AS collectible_discount_amount_platform
+                                ,SUM(collectible_discount_amount_seller) AS collectible_discount_amount_seller
+                                ,SUM(shipping_discount_amount_seller * exchange_rate) AS shipping_discount_amount_seller
+                                ,SUM(shipping_discount_amount_platform * exchange_rate) AS shipping_discount_amount_platform
+                                ,COUNT(DISTINCT sales_order_item_id) AS Delivered_Items
+                                ,COUNT(DISTINCT product_id) AS selling_assortment
+                                ,COUNT(DISTINCT seller_id) AS selling_sellers
+                        FROM    daraz_cdm.dwd_drz_trd_core_df
+                        WHERE   ds = MAX_PT('daraz_cdm.dwd_drz_trd_core_df')
+                        AND     TO_CHAR(fulfillment_create_date,'yyyymmdd') between (20230315) and (20230321)
+                        AND     venture IN ('PK')
+                        --AND     venture_category1_name_en IN ('Media Music & Books','Sports & Outdoors','Stationery & Craft','Toys & Games') --AND     venture_category2_name_en in ('Lighting') 
+                        --AND     shop_account_code IN ('PK10FPX','PK2NBNK8YKI','PK1PML5','PK2NBNI1HCI','PK104AV','PK100VC','PK102HG','PK10233','PK2NBNKUVOO','PK2NBNJ1LN7','PK107UZ','PK1039Y','PK1NE3T','PK1NPOB','PK2NBNK2XWA','PK1PWT0','PK2NBNKOWUH','PK2NBNK7RMR','PK10MB7','PK2NBNITUT3','PK2NBNLONYF','PK2NBNL6OEA','PK1NN9W','PK104IZ','PK1P9OB','PK2NBNJ5465','PK2NBNJY3Y8','PK2NBNKP1M4','PK2NBNKX1S8','PK108HT','PK1NYS3','PK2NBNJ0CKE','PK1RF9N','PK2NBNIAI69','PK2NBNK304M','PK2NBNLOE6R','PK2NBNINRB8','PK2NBNI24B5','PK2NBNHEVIO','PK106A0','PK2NBNJK392','PK1NBBF','PK2NBNJU470','PK2NBNKNV26','PK2NBNK5KPO','PK2NBNKEWVJ','PK2NBNKL04F','PK105WG','PK10D1R','PK2NBNKO07C','PK2NBNK83Y3','PK2NBNMMM8L','PK2NBNMJJL8','PK1P6VR','PK2NBNKX947','PK1PIH1','PK2NBNIWMS0','PK2NBNJYKYV','PK10K6H','PK10LS0','PK2NBNKOJOP','PK2NBNK74RA','PK2NBNINW8G','PK2NBNHGZ3T','PK2NBNKLGX6','PK1083M','PK1RPFO','PK2NBNKDMDW','PK2NBNI6VUU','PK2NBNIMRYA','PK2NBNHWNBB','PK2NBNKP6TZ','PK2NBNKSSDX','PK2NBNJZXXI','PK2NBNK8BE7','PK2NBNKLROI','PK2NBNH4XZP','PK10I13','PK2NBNIHVBK','PK1RUPB','PK2NBNHIAIF','PK1O9PO','PK2NBNKD0J1','PK2NBNKJI3V','PK2NBNIAN2O','PK2NBNH9EKK','PK2NBNJYIEW','PK1PSB1','PK2NBNI26RN','PK2NBNLORKK','PK2NBNKELT3','PK2NBNH9JJ8','PK1O1B5','PK2NBNM85B6','PK2NBNK1NMD','PK1PM5G','PK2NBNL1YB6','PK2NBNMX2YN','PK2NBNKIIUB') --and     daraz_sku in (select daraz_sku from hds_fashion)
+                        and    daraz_sku in (select daraz_sku from hds_fashion)
+                        --   )
+                        --and     shop_account_code in ('PK1NBBF')                        
+                        -- AND tolower(brand_name) like "%dollar%"
+                        --AND venture_category1_name_en IN ('Home Appliances')
+                        --AND venture_category2_name_en IN ('Kitchen Appliances','Washers & Dryers','Small Kitchen Appliances','Cooling & Heating', 'Generators & Portable Power', 'Irons & Garment Steamers')
+                        AND     is_fulfilled = '1'
+                        GROUP BY --TO_CHAR(fulfillment_create_date,'yyyymm')
+                                 daraz_sku
+                                 ,product_name
+                                 ,product_id
+                                 ,brand_name
+                                 ,venture_category1_name_en
+                                 ,venture_category2_name_en
+                                 ,venture_category3_name_en
+                                 ,shop_account_name
+                    ) AS a
+            RIGHT JOIN  (
+                            SELECT  --SUBSTR(ds,1,6) AS date
+                                    daraz_sku
+                                    ,venture_category1_name_en
+                                    ,venture_category2_name_en
+                                    ,venture_category3_name_en
+                                    ,seller_short_code
+                                    ,shop_account_name
+                                    ,brand_name
+                                    ,product_id
+                                    ,product_name
+                                    ,AVG(current_price) AS Current_price
+                                    ,COUNT(DISTINCT visitor_id) AS uvs
+                                    ,COUNT(visitor_id) AS pvs
+                                    ,COUNT(DISTINCT utdid) AS Dau
+                                    ,COUNT(DISTINCT user_id) AS a2c
+                                    ,SUM(stock_available) AS stock_in
+                            FROM    (
+                                        SELECT  m.*
+                                                ,n.user_id
+                                        FROM    (
+                                                    SELECT  z.ds
+                                                            ,z.daraz_sku
+                                                            ,z.visitor_id
+                                                            ,z.utdid
+                                                            ,y.venture_category1_name_en
+                                                            ,y.venture_category2_name_en
+                                                            ,y.venture_category3_name_en
+                                                            ,y.seller_short_code
+                                                            ,y.shop_account_name
+                                                            ,y.brand_name
+                                                            ,y.product_id
+                                                            ,y.product_name
+                                                            ,y.current_price
+                                                            ,y.stock_available
+                                                    FROM    (
+                                                                SELECT  ds
+                                                                        ,item_id AS daraz_sku
+                                                                        ,visitor_id
+                                                                        ,utdid
+                                                                FROM    daraz_cdm.dwd_drz_log_ut_pv_di
+                                                                WHERE   substr(ds,1,8) between (20230315) and (20230321)
+                                                                AND     Venture = 'PK'
+                                                            ) AS z
+                                                    LEFT JOIN   (
+                                                                    SELECT  ds
+                                                                            ,daraz_sku
+                                                                            ,venture_category1_name_en
+                                                                            ,venture_category2_name_en
+                                                                            ,venture_category3_name_en
+                                                                            ,seller_short_code
+                                                                            ,shop_account_name
+                                                                            ,brand_name
+                                                                            ,product_id
+                                                                            ,product_name
+                                                                            ,current_price
+                                                                            ,stock_available
+                                                                    FROM    daraz_cdm.dim_drz_prd_sku_core
+                                                                    WHERE   ds = MAX_PT('daraz_cdm.dim_drz_prd_sku_core')
+                                                                    AND     venture = 'PK'
+                                                                ) AS y
+                                                    ON      z.daraz_sku = y.daraz_sku
+                                                ) AS m
+                                        LEFT JOIN   (
+                                                        SELECT  ds
+                                                                ,daraz_sku
+                                                                ,user_id
+                                                        FROM    daraz_cdm.dwd_drz_trd_cart_ent_di
+                                                        WHERE   substr(ds,1,8) between (20230315) and (20230321)
+                                                    ) AS n
+                                        ON      m.daraz_sku = n.daraz_sku
+                                        AND     m.ds = n.ds
+                                    ) 
+                            WHERE   substr(ds,1,8) between (20230315) and (20230321)
+                             --and     seller_short_code in ('PK1NBBF')                        
+                            --AND venture_category1_name_en IN ('Motors')
+                            --AND     Venture = 'PK'
+                            --AND     venture_category1_name_en IN ('Media Music & Books','Sports & Outdoors','Stationery & Craft','Toys & Games') --AND tolower(brand_name) like "%dollar%"
+                            --AND     seller_short_code IN ('PK10FPX','PK2NBNK8YKI','PK1PML5','PK2NBNI1HCI','PK104AV','PK100VC','PK102HG','PK10233','PK2NBNKUVOO','PK2NBNJ1LN7','PK107UZ','PK1039Y','PK1NE3T','PK1NPOB','PK2NBNK2XWA','PK1PWT0','PK2NBNKOWUH','PK2NBNK7RMR','PK10MB7','PK2NBNITUT3','PK2NBNLONYF','PK2NBNL6OEA','PK1NN9W','PK104IZ','PK1P9OB','PK2NBNJ5465','PK2NBNJY3Y8','PK2NBNKP1M4','PK2NBNKX1S8','PK108HT','PK1NYS3','PK2NBNJ0CKE','PK1RF9N','PK2NBNIAI69','PK2NBNK304M','PK2NBNLOE6R','PK2NBNINRB8','PK2NBNI24B5','PK2NBNHEVIO','PK106A0','PK2NBNJK392','PK1NBBF','PK2NBNJU470','PK2NBNKNV26','PK2NBNK5KPO','PK2NBNKEWVJ','PK2NBNKL04F','PK105WG','PK10D1R','PK2NBNKO07C','PK2NBNK83Y3','PK2NBNMMM8L','PK2NBNMJJL8','PK1P6VR','PK2NBNKX947','PK1PIH1','PK2NBNIWMS0','PK2NBNJYKYV','PK10K6H','PK10LS0','PK2NBNKOJOP','PK2NBNK74RA','PK2NBNINW8G','PK2NBNHGZ3T','PK2NBNKLGX6','PK1083M','PK1RPFO','PK2NBNKDMDW','PK2NBNI6VUU','PK2NBNIMRYA','PK2NBNHWNBB','PK2NBNKP6TZ','PK2NBNKSSDX','PK2NBNJZXXI','PK2NBNK8BE7','PK2NBNKLROI','PK2NBNH4XZP','PK10I13','PK2NBNIHVBK','PK1RUPB','PK2NBNHIAIF','PK1O9PO','PK2NBNKD0J1','PK2NBNKJI3V','PK2NBNIAN2O','PK2NBNH9EKK','PK2NBNJYIEW','PK1PSB1','PK2NBNI26RN','PK2NBNLORKK','PK2NBNKELT3','PK2NBNH9JJ8','PK1O1B5','PK2NBNM85B6','PK2NBNK1NMD','PK1PM5G','PK2NBNL1YB6','PK2NBNMX2YN','PK2NBNKIIUB') --and     daraz_sku in (select daraz_sku from hds_fashion)
+                             and    daraz_sku in (select daraz_sku from hds_fashion)                            --and venture_category1_name_en in ('Furniture & Décor')
+                            --AND venture_category1_name_en IN ('Motors')
+                            --AND venture_category2_name_en IN ('Kitchen Appliances','Washers & Dryers','Small Kitchen Appliances','Cooling & Heating', 'Generators & Portable Power', 'Irons & Garment Steamers')
+                            GROUP BY --SUBSTR(ds,1,6)
+                                     venture_category1_name_en
+                                     ,daraz_sku
+                                     ,venture_category2_name_en
+                                     ,venture_category3_name_en
+                                     ,seller_short_code
+                                     ,shop_account_name
+                                     ,brand_name
+                                     ,product_id
+                                     ,product_name
+                        ) AS b
+           -- ON      b.date = a.date --a.venture = b.venture
+            ON      b.daraz_sku = a.daraz_sku
+            AND     b.venture_category1_name_en = a.venture_category1_name_en
+            AND     b.venture_category2_name_en = a.venture_category2_name_en
+            AND     b.venture_category3_name_en = a.venture_category3_name_en
+        ) AS main
+LEFT JOIN   (
+                SELECT  daraz_sku
+                        ,property_value
+                FROM    daraz_cdm.dim_drz_prd_sku_attributes
+                WHERE   DS = MAX_PT("daraz_cdm.dim_drz_prd_sku_attributes")
+                AND     VENTURE = 'PK'
+                AND     property_name = 'name_en'
+            ) AS sec
+ON      main.daraz_sku = sec.daraz_sku
+UNION 
+SELECT  main.*
+,'MD' as marker
+        ,COALESCE(sec.property_value,main.product_name) AS product_name_eng
+FROM    (
+            SELECT  b.venture_category1_name_en
+                    ,b.venture_category2_name_en
+                    ,b.venture_category3_name_en
+                    --,b.date
+                    ,b.daraz_sku
+                    ,b.product_id
+                    ,b.product_name
+                    ,b.brand_name
+                    ,b.shop_account_name
+                    ,b.Current_price
+                    ,a.orders
+                    ,a.items
+                    ,a.lead_time
+                    ,a.buyers
+                    ,a.total_platform_discount_usd
+                    ,a.Total_Seller_Discount
+                    ,a.shipping_discount_amount_seller
+                    ,a.shipping_discount_amount_platform
+                    ,a.collectible_discount_amount_platform
+                    ,a.collectible_discount_amount_seller
+                    ,a.voucher_discount_amount_platform
+                    ,a.voucher_discount_amount_seller
+                    ,a.organic_gmv
+                    ,a.AIV
+                    ,a.AOV
+                    ,a.gmv_usd
+                    ,a.nmv_usd
+                    ,a.asst_gmv_usd
+                    ,a.nmv_items
+                    ,a.selling_assortment
+                    ,a.selling_sellers
+                    ,b.seller_short_code
+                    ,b.uvs
+                    ,b.pvs
+                    ,b.Dau
+                    ,b.a2c
+                    ,b.stock_in
+            FROM    (
+                        SELECT  --TO_CHAR(fulfillment_create_date,"yyyymm") AS date
+                                venture_category1_name_en
+                                ,daraz_sku
+                                ,product_id
+                                ,product_name
+                                ,brand_name
+                                ,venture_category2_name_en
+                                ,venture_category3_name_en
+                                ,shop_account_name
+                                ,AVG(DATEDIFF(delivery_communicate_date,order_create_date,'mi') / (
+                                            60 * 24
+                                )) AS lead_time
+                                ,AVG(list_price) AS list_price
+                                ,AVG(unit_price) AS unit_price
+                                ,AVG(paid_price) AS paid_price
+                                ,COUNT(DISTINCT sales_order_id) AS orders
+                                ,COUNT(DISTINCT sales_order_item_id) AS items
+                                ,COUNT(DISTINCT buyer_id) AS buyers
+                                ,SUM(discount_amount_by_platform * exchange_rate) AS total_platform_discount_usd
+                                ,SUM(CASE WHEN discount_amount_by_platform = 0 THEN actual_gmv * exchange_rate ELSE NULL END) AS organic_gmv
+                                ,COUNT(CASE WHEN discount_amount_by_platform = 0 THEN buyer_id ELSE NULL END) AS organic_buyer
+                                ,SUM(actual_gmv * exchange_rate) AS gmv_usd
+                                ,SUM(actual_gmv * net_item * exchange_rate) AS nmv_usd
+                                ,SUM(actual_gmv * (is_organic - 1) * -1 * exchange_rate) AS asst_gmv_usd
+                                ,SUM(sales_order_item_id / sales_order_item_id * net_item) AS nmv_items
+                                ,SUM(actual_gmv * exchange_rate) / COUNT(sales_order_item_id) AS AIV
+                                ,SUM(actual_gmv * exchange_rate) / COUNT(DISTINCT sales_order_id) AS AOV
+                                ,COUNT(sales_order_item_id) / COUNT(DISTINCT sales_order_id) AS Average_Basket_Size
+                                ,SUM(discount_amount_by_seller * exchange_rate) AS Total_Seller_Discount
+                                ,SUM(voucher_discount_amount_platform * exchange_rate) AS voucher_discount_amount_platform
+                                ,SUM(voucher_discount_amount_seller * exchange_rate) AS voucher_discount_amount_seller
+                                ,SUM(collectible_discount_amount_platform) AS collectible_discount_amount_platform
+                                ,SUM(collectible_discount_amount_seller) AS collectible_discount_amount_seller
+                                ,SUM(shipping_discount_amount_seller * exchange_rate) AS shipping_discount_amount_seller
+                                ,SUM(shipping_discount_amount_platform * exchange_rate) AS shipping_discount_amount_platform
+                                ,COUNT(DISTINCT sales_order_item_id) AS Delivered_Items
+                                ,COUNT(DISTINCT product_id) AS selling_assortment
+                                ,COUNT(DISTINCT seller_id) AS selling_sellers
+                        FROM    daraz_cdm.dwd_drz_trd_core_df
+                        WHERE   ds = MAX_PT('daraz_cdm.dwd_drz_trd_core_df')
+                        AND     TO_CHAR(fulfillment_create_date,'yyyymmdd') between (20230315) and (20230321)
+                        AND     venture IN ('PK')
+                        --AND     venture_category1_name_en IN ('Media Music & Books','Sports & Outdoors','Stationery & Craft','Toys & Games') --AND     venture_category2_name_en in ('Lighting') 
+                        --AND     shop_account_code IN ('PK10FPX','PK2NBNK8YKI','PK1PML5','PK2NBNI1HCI','PK104AV','PK100VC','PK102HG','PK10233','PK2NBNKUVOO','PK2NBNJ1LN7','PK107UZ','PK1039Y','PK1NE3T','PK1NPOB','PK2NBNK2XWA','PK1PWT0','PK2NBNKOWUH','PK2NBNK7RMR','PK10MB7','PK2NBNITUT3','PK2NBNLONYF','PK2NBNL6OEA','PK1NN9W','PK104IZ','PK1P9OB','PK2NBNJ5465','PK2NBNJY3Y8','PK2NBNKP1M4','PK2NBNKX1S8','PK108HT','PK1NYS3','PK2NBNJ0CKE','PK1RF9N','PK2NBNIAI69','PK2NBNK304M','PK2NBNLOE6R','PK2NBNINRB8','PK2NBNI24B5','PK2NBNHEVIO','PK106A0','PK2NBNJK392','PK1NBBF','PK2NBNJU470','PK2NBNKNV26','PK2NBNK5KPO','PK2NBNKEWVJ','PK2NBNKL04F','PK105WG','PK10D1R','PK2NBNKO07C','PK2NBNK83Y3','PK2NBNMMM8L','PK2NBNMJJL8','PK1P6VR','PK2NBNKX947','PK1PIH1','PK2NBNIWMS0','PK2NBNJYKYV','PK10K6H','PK10LS0','PK2NBNKOJOP','PK2NBNK74RA','PK2NBNINW8G','PK2NBNHGZ3T','PK2NBNKLGX6','PK1083M','PK1RPFO','PK2NBNKDMDW','PK2NBNI6VUU','PK2NBNIMRYA','PK2NBNHWNBB','PK2NBNKP6TZ','PK2NBNKSSDX','PK2NBNJZXXI','PK2NBNK8BE7','PK2NBNKLROI','PK2NBNH4XZP','PK10I13','PK2NBNIHVBK','PK1RUPB','PK2NBNHIAIF','PK1O9PO','PK2NBNKD0J1','PK2NBNKJI3V','PK2NBNIAN2O','PK2NBNH9EKK','PK2NBNJYIEW','PK1PSB1','PK2NBNI26RN','PK2NBNLORKK','PK2NBNKELT3','PK2NBNH9JJ8','PK1O1B5','PK2NBNM85B6','PK2NBNK1NMD','PK1PM5G','PK2NBNL1YB6','PK2NBNMX2YN','PK2NBNKIIUB') --and     daraz_sku in (select daraz_sku from hds_fashion)
+                        and    daraz_sku in (select daraz_sku from mds_fashion)
+                        --   )
+                        --and     shop_account_code in ('PK1NBBF')                        
+                        -- AND tolower(brand_name) like "%dollar%"
+                        --AND venture_category1_name_en IN ('Home Appliances')
+                        --AND venture_category2_name_en IN ('Kitchen Appliances','Washers & Dryers','Small Kitchen Appliances','Cooling & Heating', 'Generators & Portable Power', 'Irons & Garment Steamers')
+                        AND     is_fulfilled = '1'
+                        GROUP BY --TO_CHAR(fulfillment_create_date,'yyyymm')
+                                 daraz_sku
+                                 ,product_name
+                                 ,product_id
+                                 ,brand_name
+                                 ,venture_category1_name_en
+                                 ,venture_category2_name_en
+                                 ,venture_category3_name_en
+                                 ,shop_account_name
+                    ) AS a
+            RIGHT JOIN  (
+                            SELECT  --SUBSTR(ds,1,6) AS date
+                                    daraz_sku
+                                    ,venture_category1_name_en
+                                    ,venture_category2_name_en
+                                    ,venture_category3_name_en
+                                    ,seller_short_code
+                                    ,shop_account_name
+                                    ,brand_name
+                                    ,product_id
+                                    ,product_name
+                                    ,AVG(current_price) AS Current_price
+                                    ,COUNT(DISTINCT visitor_id) AS uvs
+                                    ,COUNT(visitor_id) AS pvs
+                                    ,COUNT(DISTINCT utdid) AS Dau
+                                    ,COUNT(DISTINCT user_id) AS a2c
+                                    ,SUM(stock_available) AS stock_in
+                            FROM    (
+                                        SELECT  m.*
+                                                ,n.user_id
+                                        FROM    (
+                                                    SELECT  z.ds
+                                                            ,z.daraz_sku
+                                                            ,z.visitor_id
+                                                            ,z.utdid
+                                                            ,y.venture_category1_name_en
+                                                            ,y.venture_category2_name_en
+                                                            ,y.venture_category3_name_en
+                                                            ,y.seller_short_code
+                                                            ,y.shop_account_name
+                                                            ,y.brand_name
+                                                            ,y.product_id
+                                                            ,y.product_name
+                                                            ,y.current_price
+                                                            ,y.stock_available
+                                                    FROM    (
+                                                                SELECT  ds
+                                                                        ,item_id AS daraz_sku
+                                                                        ,visitor_id
+                                                                        ,utdid
+                                                                FROM    daraz_cdm.dwd_drz_log_ut_pv_di
+                                                                WHERE   substr(ds,1,8) between (20230315) and (20230321)
+                                                                AND     Venture = 'PK'
+                                                            ) AS z
+                                                    LEFT JOIN   (
+                                                                    SELECT  ds
+                                                                            ,daraz_sku
+                                                                            ,venture_category1_name_en
+                                                                            ,venture_category2_name_en
+                                                                            ,venture_category3_name_en
+                                                                            ,seller_short_code
+                                                                            ,shop_account_name
+                                                                            ,brand_name
+                                                                            ,product_id
+                                                                            ,product_name
+                                                                            ,current_price
+                                                                            ,stock_available
+                                                                    FROM    daraz_cdm.dim_drz_prd_sku_core
+                                                                    WHERE   ds = MAX_PT('daraz_cdm.dim_drz_prd_sku_core')
+                                                                    AND     venture = 'PK'
+                                                                ) AS y
+                                                    ON      z.daraz_sku = y.daraz_sku
+                                                ) AS m
+                                        LEFT JOIN   (
+                                                        SELECT  ds
+                                                                ,daraz_sku
+                                                                ,user_id
+                                                        FROM    daraz_cdm.dwd_drz_trd_cart_ent_di
+                                                        WHERE   substr(ds,1,8) between (20230315) and (20230321)
+                                                    ) AS n
+                                        ON      m.daraz_sku = n.daraz_sku
+                                        AND     m.ds = n.ds
+                                    ) 
+                            WHERE   substr(ds,1,8) between (20230315) and (20230321)
+                             --and     seller_short_code in ('PK1NBBF')                        
+                            --AND venture_category1_name_en IN ('Motors')
+                            --AND     Venture = 'PK'
+                            --AND     venture_category1_name_en IN ('Media Music & Books','Sports & Outdoors','Stationery & Craft','Toys & Games') --AND tolower(brand_name) like "%dollar%"
+                            --AND     seller_short_code IN ('PK10FPX','PK2NBNK8YKI','PK1PML5','PK2NBNI1HCI','PK104AV','PK100VC','PK102HG','PK10233','PK2NBNKUVOO','PK2NBNJ1LN7','PK107UZ','PK1039Y','PK1NE3T','PK1NPOB','PK2NBNK2XWA','PK1PWT0','PK2NBNKOWUH','PK2NBNK7RMR','PK10MB7','PK2NBNITUT3','PK2NBNLONYF','PK2NBNL6OEA','PK1NN9W','PK104IZ','PK1P9OB','PK2NBNJ5465','PK2NBNJY3Y8','PK2NBNKP1M4','PK2NBNKX1S8','PK108HT','PK1NYS3','PK2NBNJ0CKE','PK1RF9N','PK2NBNIAI69','PK2NBNK304M','PK2NBNLOE6R','PK2NBNINRB8','PK2NBNI24B5','PK2NBNHEVIO','PK106A0','PK2NBNJK392','PK1NBBF','PK2NBNJU470','PK2NBNKNV26','PK2NBNK5KPO','PK2NBNKEWVJ','PK2NBNKL04F','PK105WG','PK10D1R','PK2NBNKO07C','PK2NBNK83Y3','PK2NBNMMM8L','PK2NBNMJJL8','PK1P6VR','PK2NBNKX947','PK1PIH1','PK2NBNIWMS0','PK2NBNJYKYV','PK10K6H','PK10LS0','PK2NBNKOJOP','PK2NBNK74RA','PK2NBNINW8G','PK2NBNHGZ3T','PK2NBNKLGX6','PK1083M','PK1RPFO','PK2NBNKDMDW','PK2NBNI6VUU','PK2NBNIMRYA','PK2NBNHWNBB','PK2NBNKP6TZ','PK2NBNKSSDX','PK2NBNJZXXI','PK2NBNK8BE7','PK2NBNKLROI','PK2NBNH4XZP','PK10I13','PK2NBNIHVBK','PK1RUPB','PK2NBNHIAIF','PK1O9PO','PK2NBNKD0J1','PK2NBNKJI3V','PK2NBNIAN2O','PK2NBNH9EKK','PK2NBNJYIEW','PK1PSB1','PK2NBNI26RN','PK2NBNLORKK','PK2NBNKELT3','PK2NBNH9JJ8','PK1O1B5','PK2NBNM85B6','PK2NBNK1NMD','PK1PM5G','PK2NBNL1YB6','PK2NBNMX2YN','PK2NBNKIIUB') --and     daraz_sku in (select daraz_sku from hds_fashion)
+                             and    daraz_sku in (select daraz_sku from mds_fashion)                            --and venture_category1_name_en in ('Furniture & Décor')
+                            --AND venture_category1_name_en IN ('Motors')
+                            --AND venture_category2_name_en IN ('Kitchen Appliances','Washers & Dryers','Small Kitchen Appliances','Cooling & Heating', 'Generators & Portable Power', 'Irons & Garment Steamers')
+                            GROUP BY --SUBSTR(ds,1,6)
+                                     venture_category1_name_en
+                                     ,daraz_sku
+                                     ,venture_category2_name_en
+                                     ,venture_category3_name_en
+                                     ,seller_short_code
+                                     ,shop_account_name
+                                     ,brand_name
+                                     ,product_id
+                                     ,product_name
+                        ) AS b
+           -- ON      b.date = a.date --a.venture = b.venture
+            ON      b.daraz_sku = a.daraz_sku
+            AND     b.venture_category1_name_en = a.venture_category1_name_en
+            AND     b.venture_category2_name_en = a.venture_category2_name_en
+            AND     b.venture_category3_name_en = a.venture_category3_name_en
+        ) AS main
+LEFT JOIN   (
+                SELECT  daraz_sku
+                        ,property_value
+                FROM    daraz_cdm.dim_drz_prd_sku_attributes
+                WHERE   DS = MAX_PT("daraz_cdm.dim_drz_prd_sku_attributes")
+                AND     VENTURE = 'PK'
+                AND     property_name = 'name_en'
+            ) AS sec
+ON      main.daraz_sku = sec.daraz_sku
+
+
+
+;
