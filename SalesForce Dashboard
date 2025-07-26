@@ -1,0 +1,420 @@
+select 
+distinct 
+coalesce(main.BU , Msg.BU, Email.BU, registrations.BU, trt.BU ) as BU_
+,coalesce(main.LOC , Msg.LOC, Email.LOC, registrations.LOC, trt.Market ) as LOC_
+,coalesce(main.Country_Code_3d , Msg.Country_Code_3d, Email.Country_Code_3d, registrations.Country_Code_3d, trt.FSFA_country_code_3d) as Country_
+,coalesce(main.Master_Specialty , Msg.Master_Specialty, Email.Master_Specialty, registrations.Master_Specialty, trt.specialty) as Specialty_
+,coalesce(main.Line , Msg.Line, Email.Line, registrations.Line, trt.Line) as Line_
+,coalesce(main.call_date , Msg.Captured_Date, Email.Email_Sent_Date, registrations.quarter_, trt.Target_Period) as dated_
+,main.unique_visits
+,main.total_visits
+,main.overall_consent
+,main.email_consent
+,msg.Whatsapp_engagements
+,msg.Whatsapp_unique_hcps_clicked
+,msg.Whatsapp_sent_msgs
+,email.Unique_Email_Reach
+,email.Unique_Emails_Sent
+,email.Clicked_Emails
+,email.Unique_Emails_Sent_opened
+,registrations.registrations
+,registrations.total_reg
+,registrations.spec_total_reg
+,registrations.line_total_reg
+,trt.*
+--,mass_email.No_of_Massemail_Campaigns
+--,mass_email.mass_emails_sent
+--,mass_email.delivered_mass_email
+--,mass_email.Opened_mass_email
+--,mass_email.Clicked_mass_email
+ 
+--INTO #temp12
+from
+(
+
+---Consent Part
+
+select 
+coun.BU
+,coun.LOC
+,coun.Country_Code_3d
+,spec.Master_Specialty
+,trt.Line
+,CONCAT('Q', DATEPART(QUARTER,cl.Call_Date), ' ', YEAR(cl.Call_Date)) as call_date
+,count(cl.Account_Id) as total_visits
+,count(distinct cl.Account_Id) as unique_visits
+,count(distinct CONCAT(cl.remote_meeting,cl.Veeva_Remote_Meeting_Id)) as veeva_meeting_id
+,count(distinct case when cons.RepEmail_consent= 'Y' then cl.Account_Id else null end) as email_consent
+,count(distinct case when cons.veeva_consent = 'Y' then cl.Account_Id else null end) as Veeva_consent
+
+from
+
+(Select * from EPR_Optimized.Fact_FSFA_Call
+where Call_Status in ('Submitted_vod') 
+and   call_date >= '2024-01-01 00:00:00.0000000'
+and ((Territory_Code LIKE '%21.%') OR (Territory_Code LIKE '%22.%')) AND (Territory_Code IS NOT NULL)
+and isdeleted = 'False'
+--and Country_Code = 'PAK'
+) cl
+left join (select *  from EPR_Optimized.Dim_FSFA_User ) usr
+on cl.owner_id = usr.user_id
+
+left join (Select * from EPR_Optimized.Dim_FSFA_Account) as acc
+on cl.Account_Id = acc.Account_Id
+left join (Select * from [EPR_Optimized].[Manual_Specialty]) as spec
+ON ISNULL(acc.Specialty_1,'')= ISNULL (Spec.Account_Specialty,'')
+left join (Select * from EPR_TECH.Market_Code_Mapping MCM) as coun
+on cl.country_code = coun.country_code_3d
+left JOIN (SELECT * FROM EPR_Optimized.Manual_Terr_Rep_Targets where Is_Active = 1) Trt 
+ON CL.Territory_Code = Trt.Territory_Label AND (CONCAT('Q', DATEPART(QUARTER,Cl.Call_Date), ' ', YEAR(Cl.Call_Date))) = Trt.Target_Period
+left join
+(
+SELECT  
+distinct CONS_B.Account_Id
+,max(case when Master_Consent_Type = 'RepEmail' then 'Y' else 'N' end) as RepEmail_consent
+,max(case when Master_Consent_Type = 'Call' then 'Y' else 'N' end) as Call_consent
+,max(case when Master_Consent_Type = 'MassEmail' then 'Y' else 'N' end) as MassEmail_consent
+,max(case when Master_Consent_Type = 'WhatsApp' then 'Y' else 'N' end) as WhatsApp_consent
+,max(case when Master_Consent_Type = 'OtherChannel' then 'Y' else 'N' end) as OtherChannel_consent
+,case when max(case when Master_Consent_Type = 'RepEmail' then 'Y' else 'N' end) = 'Y' OR max(case when Master_Consent_Type = 'MassEmail' then 'Y' else 'N' end) = 'Y' then 'Y' Else 'N' end as veeva_consent
+--,STRING_AGG(MAster_Consent_Type,'/') as MAster_Consent_Type
+--,len(STRING_AGG(MAster_Consent_Type,'/')) as MAster_Consent_Type_l
+--,len(REPLACE(STRING_AGG(MAster_Consent_Type,'/'), '/','')) as helo
+--,len(STRING_AGG(MAster_Consent_Type,'/')) - len(REPLACE(STRING_AGG(MAster_Consent_Type,'/'), '/','')) as diff
+--,STRING_AGG(Opt_Type,'/') as Opt_Type
+--,STRING_AGG(Multi_Channel_Consent_Id,'/') as Multi_Channel_Consent_Id
+--,STRING_AGG(Opt_Expiration_Date,'/') as Opt_Expiration_Date
+--,STRING_AGG(Captured_Date,'/') as Captured_Date
+,case when Market in  ('GNE', 'Pakistan', 'KSA', 'RSA', 'Türkiye') and len(STRING_AGG(MAster_Consent_Type,'/')) - len(REPLACE(STRING_AGG(MAster_Consent_Type,'/'),'/','')) >= 3 then 'Yes'
+      when Market in  ('N Africa', 'SSA') and STRING_AGG(MAster_Consent_Type,'/') like '%RepEmail%' then 'Yes'
+else 'No' end as consented
+
+FROM
+(
+SELECT CONS_A.* 
+, ROW_NUMBER() Over (PArtition by Account_ID, MAster_Consent_Type order by captured_Date DESC, Multi_Channel_Consent_Name DESC) AS RNK  FROM
+--,case when Market in  ('N Africa', 'Pakistan', 'SSA') and Master_Consent_Type = 'RepEmail' and Opt_Type = 'Opt_In_vod' then 'Yes' 
+--      when Market in  ('GNE', 'KSA', 'RSA', 'Türkiye') and Master_Consent_Type IN  ('RepEmail', 'WhatsApp', 'Call', 'MassEmail') and Opt_Type = 'Opt_In_vod' then 'Yes' 
+--	  ELSE ' ' end as Consent
+
+(
+Select A.*,B.DeveloperName ,
+CASE WHEN B.DeveloperName ='Approved_Email_vod' and A.sub_Channel_Key IS NULL THEN 'RepEmail'
+WHEN (B.DeveloperName ='gsk_core_ED_ReadOnly_Consent' or B.DeveloperName ='Approved_Email_vod') and A.sub_Channel_Key in('sms','instantMsg') THEN 'WhatsApp'
+WHEN (B.DeveloperName ='gsk_core_ED_ReadOnly_Consent' or B.DeveloperName ='Approved_Email_vod')  and A.sub_Channel_Key in('audioCall','videoCall') THEN 'Call' 
+WHEN (B.DeveloperName ='gsk_core_ED_ReadOnly_Consent' or B.DeveloperName ='Approved_Email_vod')  and A.Sub_channel_Key in('marketingEmail') THEN 'MassEmail' ELSE 'Other_channel' END Master_Consent_Type
+,CASE 
+    WHEN right(A.MarketCodeDerived,2) IN ('DZ', 'EG', 'MA') THEN 'N Africa'
+    WHEN right(A.MarketCodeDerived,2) IN ('BH', 'JO', 'KW', 'LB', 'OM', 'QA', 'AE') THEN 'GNE'
+    WHEN right(A.MarketCodeDerived,2) IN ('BJ', 'CM', 'CG', 'CD', 'GA', 'CI', 'KE', 'MU', 'NG', 'SN', 'TG') THEN 'SSA'
+    WHEN right(A.MarketCodeDerived,2) = 'SA' THEN 'KSA'
+    WHEN right(A.MarketCodeDerived,2) = 'PK' THEN 'Pakistan'
+    WHEN right(A.MarketCodeDerived,2) = 'ZA' THEN 'RSA'
+    WHEN right(A.MarketCodeDerived,2) = 'TR' THEN 'Türkiye'
+    ELSE 'Other'
+END AS Market
+from [EPR_Optimized].[Fact_FSFA_Multichannal_Consent] A
+INNER JOIN [EPR_Optimized].[Dim_FSFA_RecordType] B on A.RecordTypeId = B.RecordTypeId
+where 
+IsDeleted='False'
+--AND  Account_Id = '0012j00000dfU8OAAU'
+) CONS_A
+) CONS_B 
+where RNK='1' and Opt_Type='Opt_In_vod' 
+and (TRY_CONVERT(DATE, Opt_Expiration_Date) >  GETDATE() or Opt_Expiration_Date is NULL)
+group by 
+CONS_B.Account_Id
+--,CONS_B.Master_Consent_Type
+,CONS_B.Market
+) as cons
+on cl.account_id = cons.account_id
+group by 
+coun.BU
+,coun.LOC
+,coun.Country_Code_3d
+,spec.Master_Specialty
+,trt.Line
+,CONCAT('Q', DATEPART(QUARTER,cl.Call_Date), ' ', YEAR(cl.Call_Date))
+) as main
+
+
+full outer join
+
+(select 
+coun.BU
+,coun.LOC
+,coun.Country_Code_3d
+,spec.Master_Specialty
+,trt.Line
+,(CONCAT('Q', DATEPART(QUARTER,Captured_Date), ' ', YEAR(Captured_Date))) as Captured_Date
+,count(distinct CASE when clicked = 1 then a.account_id else null end) as Whatsapp_unique_hcps_clicked
+,count(distinct CASE when clicked = 1 then a.SentMessage_Id else null end) as Whatsapp_engagements
+,count(distinct a.SentMessage_Id) as Whatsapp_sent_msgs
+,count(distinct case when clicked = 1 then SentMessage_Id else null end) * 1.0 / count(distinct sentmessage_id) * 1.0 as Whatsapp_open_rate
+,count(distinct case when Transaction_Type = 'Remote_CLM_Link_vod' and Clicked = 1 then SentMessage_Id else null end) as Whatsapp_remote_clm_link
+From
+(Select * from EPR_Optimized.Fact_FSFA_SentMessage 
+where isdeleted = 'False'
+and Captured_Date >= '2024-01-01 00:00:00.0000000' 
+--and Captured_Date <= '2025-03-31 00:00:00.0000000'
+--and Country_Code = 'PAK'
+) as a 
+
+left join (select *  from EPR_Optimized.Dim_FSFA_User ) usr
+on a.owner_id = usr.user_id
+left join (Select * from EPR_Optimized.Dim_FSFA_Account) as acc
+on a.Account_Id = acc.Account_Id
+left join (Select * from [EPR_Optimized].[Manual_Specialty]) as spec
+ON ISNULL(acc.Specialty_1,'')= ISNULL (Spec.Account_Specialty,'')
+left join (Select * from EPR_TECH.Market_Code_Mapping) as coun
+on a.country_code = coun.country_code_3d
+left JOIN (SELECT * FROM EPR_Optimized.Manual_Terr_Rep_Targets where Is_Active = 1) Trt 
+ON A.Owner_Id = Trt.User_ID_18_CH AND (CONCAT('Q', DATEPART(QUARTER,a.Captured_Date), ' ', YEAR(a.Captured_Date))) = Trt.Target_Period
+
+inner join 
+(Select * from EPR_Optimized.Fact_FSFA_Call
+where Call_Status in ('Submitted_vod') 
+and   call_date >= '2024-01-01 00:00:00.0000000' 
+and ((Territory_Code LIKE '%21.%') OR (Territory_Code LIKE '%22.%')) AND (Territory_Code IS NOT NULL)
+and isdeleted = 'False') as b 
+on a.Account_Id = b.Account_Id
+and (CONCAT('Q', DATEPART(QUARTER,a.Captured_Date), ' ', YEAR(a.Captured_Date))) = (CONCAT('Q', DATEPART(QUARTER,call_date), ' ', YEAR(call_date)))
+
+group by 
+coun.BU
+,coun.LOC
+,coun.Country_Code_3d
+,spec.Master_Specialty
+,trt.Line
+,CONCAT('Q', DATEPART(QUARTER,Captured_Date), ' ', YEAR(Captured_Date))
+) as Msg 
+
+on main.BU = Msg.BU 
+and main.LOC = Msg.LOC
+and main.Country_Code_3d = Msg.Country_Code_3d
+and main.Master_Specialty = Msg.Master_Specialty
+and main.Line = Msg.Line
+and main.call_date = msg.Captured_Date
+
+full outer join
+
+(select 
+coun.BU
+,coun.LOC
+,coun.Country_Code_3d
+,spec.Master_Specialty
+,trt.Line
+,(CONCAT('Q', DATEPART(QUARTER,Email_Sent_Date), ' ', YEAR(Email_Sent_Date))) as Email_Sent_Date
+,count(distinct CASE when Opened = 1 and status = 'Delivered_vod' then a.Account_Id else null end) as Unique_Email_Reach
+,count(distinct CASE when Opened = 1 and status = 'Delivered_vod' then concat(a.Account_Id,a.Subject) else null end) as Unique_Emails_Sent_opened
+,count(distinct concat(a.Account_Id,a.Subject)) as Unique_Emails_Sent
+,count(distinct CASE when Clicked = 1 and status = 'Delivered_vod' then concat(a.Account_Id,a.Subject) else null end) as Clicked_Emails
+,count(distinct CASE when status = 'Delivered_vod' then concat(a.Account_Id,a.Subject) else null end) as Delivered_Emails
+,count(distinct Subject) as Email_Campaign
+from
+
+(Select  * from EPR_Optimized.Fact_FSFA_SentEmail 
+where isdeleted = 'False'
+--and Country_Code = 'PAK'
+and Email_Sent_Date >= '2024-01-01 00:00:00.0000000' 
+--and Email_Sent_Date <= '2025-03-31 00:00:00.0000000'
+) as a
+
+
+left join (select *  from EPR_Optimized.Dim_FSFA_User ) usr
+on a.owner_id = usr.user_id
+left join (Select * from EPR_Optimized.Dim_FSFA_Account) as acc
+on a.Account_Id = acc.Account_Id
+left join (Select * from [EPR_Optimized].[Manual_Specialty]) as spec
+ON ISNULL(acc.Specialty_1,'')= ISNULL (Spec.Account_Specialty,'')
+left join (Select * from EPR_TECH.Market_Code_Mapping) as coun
+on a.country_code = coun.country_code_3d
+left JOIN (SELECT * FROM EPR_Optimized.Manual_Terr_Rep_Targets where Is_Active = 1) Trt 
+ON A.Owner_Id = Trt.User_ID_18_CH AND (CONCAT('Q', DATEPART(QUARTER,a.Email_Sent_Date), ' ', YEAR(a.Email_Sent_Date))) = Trt.Target_Period
+
+
+inner join 
+(Select * from EPR_Optimized.Fact_FSFA_Call
+where Call_Status in ('Submitted_vod') 
+and    call_date >= '2024-01-01 00:00:00.0000000' 
+--and call_date <= '2025-03-31 00:00:00.0000000'
+and ((Territory_Code LIKE '%21.%') OR (Territory_Code LIKE '%22.%')) AND (Territory_Code IS NOT NULL)
+and isdeleted = 'False') as b 
+on a.account_id = b.account_id
+and (CONCAT('Q', DATEPART(QUARTER,a.Email_Sent_Date), ' ', YEAR(a.Email_Sent_Date))) = (CONCAT('Q', DATEPART(QUARTER,call_date), ' ', YEAR(call_date)))
+
+group by 
+coun.BU
+,coun.LOC
+,coun.Country_Code_3d
+,spec.Master_Specialty
+,trt.Line
+,(CONCAT('Q', DATEPART(QUARTER,Email_Sent_Date), ' ', YEAR(Email_Sent_Date)))
+
+) as email
+
+
+on main.BU = email.BU 
+and main.LOC = email.LOC
+and main.Country_Code_3d = email.Country_Code_3d
+and main.Master_Specialty = email.Master_Specialty
+and main.Line = email.Line
+and main.call_date = email.Email_Sent_Date
+
+full outer join
+
+(
+select 
+main.*
+,sum(registrations) over (partition by country_code_3d order by dated) as total_reg
+,sum(registrations) over (partition by country_code_3d, master_specialty order by dated) as spec_total_reg
+,sum(registrations) over (partition by country_code_3d, master_specialty, Line order by dated) as line_total_reg
+--rows between unbounded preceding and current row
+--) as total_reg
+from 
+(Select
+MCM.BU
+,MCM.LOC
+,MCM.Country_Code_3d
+,Spec.Master_Specialty
+,VW1.Line
+,concat('Q', DATEPART(quarter,Registered_Timestamp), ' ' , year(Registered_Timestamp))  as quarter_
+
+,year(Registered_Timestamp) * 10  + DATEPART(quarter,Registered_Timestamp) AS dated
+,count(distinct A.gigyaid) as registrations
+--,count(distinct A.GigyaId) over (PARTITION BY  MCM.Country_Code_3d order by year(Registered_Timestamp) * 10  + DATEPART(quarter,Registered_Timestamp)) as cummulative_reg
+
+from [EPR_Optimized].[Dim_Gigya_Account] A
+LEFT JOIN [EPR_Optimized].[Dim_Gigya_Email_Account] B ON A.GigyaId = B.GigyaId
+LEFT JOIN (select * from [EPR_Optimized].Manual_Specialty where Is_Active = 1) Spec  ON A.Profession = Spec.Account_Specialty
+LEFT JOIN EPR_TECH.Market_Code_Mapping MCM ON A.Country_Code = MCM.Country_Code_3d
+LEFT JOIN (select distinct Master_Specialty,Gigya_Id,Territory_Code,Line,Rep_Name,Rep_Email,Manager_Email,Manager_Name from [EPR_Optimized].[VW_FACT_MEA_SFE_DIR_CH_AGG]) VW1 ON A.GigyaId = VW1.Gigya_Id
+
+where CAST(Registered_Timestamp AS DATE) is not null
+AND spec.Master_Specialty in ('Dentist','PH','GP')
+and Registered_Timestamp >= '2024-01-01 00:00:00.0000000' 
+and Registered_Timestamp <= '2024-03-31 00:00:00.0000000' 
+
+--AND VW1.Line IS NOT NULL
+AND A.Country_Code = 'PAK'
+group by
+concat('Q', DATEPART(quarter,Registered_Timestamp), ' ' , year(Registered_Timestamp))
+,MCM.BU
+,MCM.LOC
+,MCM.Country_Code_3d
+,Spec.Master_Specialty
+,VW1.Line
+,year(Registered_Timestamp) * 10  + DATEPART(quarter,Registered_Timestamp) 
+) as main
+group by 
+main.BU
+,main.LOC
+,main.Country_Code_3d
+,main.Master_Specialty
+,main.dated
+,main.line
+,main.registrations
+,quarter_
+) as registrations
+
+on main.BU = registrations.BU 
+and main.LOC = registrations.LOC
+and main.Country_Code_3d = registrations.Country_Code_3d
+and main.Master_Specialty = registrations.Master_Specialty
+and main.Line = registrations.Line
+and main.call_date = registrations.quarter_
+
+full outer join 
+
+(
+Select A.*, B.BU from
+(Select * from [EPR_Optimized].[VW_MEA_SFE_DIR_CH_COUNTRY_TARGETS]) AS A
+left join
+(Select * from EPR_TECH.Market_Code_Mapping MCM) AS B
+ON A.FSfA_Country_Code_3d = B.Country_Code_3d
+--where FSFA_Country_Code = 'PK'
+--AND Target_Period = 'Q1 2025'
+) 
+ as trt 
+
+on main.LOC = trt.Market
+and main.Country_Code_3d = trt.FSFA_country_code_3d
+and main.Master_Specialty = trt.Specialty
+and main.Line = trt.Line
+and main.call_date = trt.target_period
+
+full outer join
+
+( Select 
+ BU
+,LOC
+,Country_Code
+,Master_Specialty
+,Line
+,(CONCAT('Q', DATEPART(QUARTER,Email_Sent_Date), ' ', YEAR(Email_Sent_Date))) as Email_Sent_Date
+,COUNT(distinct Email_Subject_Line) as No_of_Massemail_Campaigns
+,count(distinct concat(Email_Subject_Line, Email_Id)) as mass_emails_sent
+,count(distinct case when Status = 'Delivered' then concat(Email_Subject_Line, Email_Id) else null end) as delivered_mass_email
+,count(distinct case when Status = 'Delivered' and Email_open_date is not null then concat(Email_Subject_Line, Email_Id) else null end) as Opened_mass_email
+,count(distinct case when Status = 'Delivered' and Email_Click_date is not null then concat(Email_Subject_Line, Email_Id) else null end) as Clicked_mass_email
+ 
+ from
+ (select 
+ 'SFMC' AS Source_Syst,
+ NULL AS Account_Id,
+ NULL as Call_Account_ID,
+ NULL AS Call_Date,
+ BU,
+ LOC,
+ Expert_Gigya_ID,
+ Expert_FSFA_CRM_ID,
+ SFMC_EMAIL.Country_Code,
+ MCM.LOC AS Market,
+ Expert_Activity_Id,
+Email_name AS Email_Id, 
+Email_name, 
+Email_Subject_Line, 
+Sent_Date as Email_Sent_Date,
+REPLACE(Email_Bounce_Date,'[object Object]','') AS Email_Bounce_Date,
+REPLACE(Email_Bounce_Type,'[object Object]','') AS Email_Bounce_type,
+REPLACE(open_date,'[object Object]','') AS Email_open_date,
+REPLACE(Click_date,'[object Object]','') AS Email_Click_date,
+CASE WHEN  REPLACE(Email_Bounce_Date,'[object Object]','') <> '' Then 'Bounced' Else 'Delivered' END Status,
+CASE WHEN  REPLACE(Email_Bounce_Date,'[object Object]','') <> '' Then 0 Else 1 END AS Delivered_Count,
+SP.Master_Specialty,
+Line,
+Rep_Email,
+NULL AS Account_Name,
+CASE WHEN REPLACE(Click_date,'[object Object]','') is not null THEN 1 ELSE 0 END AS Clicked,
+CASE WHEN REPLACE(open_date,'[object Object]','') is not null THEN 1 ELSE 0 END AS Opened,
+Activity_Name AS Campaign_Name,
+Territory_Code AS Territory_Code,
+NULL AS Parent_Organization,
+NULL AS Master_Segment,
+Manager_Email,
+Rep_Name,
+Manager_Name
+from [EPR_Optimized].[Fact_SFMC_HCP_Level_Activity] SFMC_EMAIL
+LEFT JOIN [EPR_Optimized].[Dim_Gigya_Account] Gigya ON SFMC_EMAIL.Expert_Gigya_ID = Gigya.GigyaId
+LEFT JOIN (select * from [EPR_Optimized].[Manual_Specialty] where Is_Active = 1)  SP ON UPPER(Gigya.Profession) = UPPER(SP.Account_Specialty)
+LEFT JOIN EPR_TECH.Market_Code_Mapping MCM 
+        ON SFMC_EMAIL.Country_Code = MCM.Country_Code_3d
+LEFT JOIN [EPR_Optimized].[VW_FACT_MEA_SFE_DIR_CH_AGG] VW1 ON SFMC_EMAIL.Expert_Gigya_ID = VW1.Gigya_Id
+where  Sent_Date >= '2024-01-01 00:00:00.0000000' --DATEADD(year, -2, GETDATE())
+) AS a
+group by   
+BU
+,LOC
+,Country_Code
+,Master_Specialty
+,Line
+,(CONCAT('Q', DATEPART(QUARTER,Email_Sent_Date), ' ', YEAR(Email_Sent_Date)))
+) as mass_email 
+
+on main.LOC = mass_email.LOC
+and main.Country_Code_3d = mass_email.country_code
+and main.Master_Specialty = mass_email.Master_Specialty
+and main.Line = mass_email.Line
+and main.call_date = mass_email.Email_Sent_Date;
+
+--Select * from #temp12
