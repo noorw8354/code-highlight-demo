@@ -1,0 +1,31 @@
+DROP TABLE IF EXISTS nw_1 ;
+
+CREATE TABLE nw_1 AS
+SELECT  SUBSTR(ds,1,6) AS month
+,seller_id
+        ,brand_name
+        --,business_area
+        --,brand_name
+        ,COUNT(DISTINCT seller_id) AS Total_Sellers
+        ,COUNT(DISTINCT CASE WHEN (sum_is_visible > 0) THEN seller_id END) AS Live_Sellers
+        ,COUNT(DISTINCT CASE WHEN (sum_is_visible > 0) THEN product_id END) AS Products_visible
+        ,COUNT(DISTINCT CASE WHEN (sum_is_visible > 0) AND (live_days > 0) THEN product_id END) AS Products_Purchaseable
+        ,COUNT(DISTINCT CASE WHEN (sum_is_visible > 0) AND (live_days = 0) THEN product_id END) AS Products_OOS
+        ,COUNT(DISTINCT CASE WHEN (impression_count > 0) AND (sum_is_visible > 0) THEN product_id END) AS Products_impressed
+        ,COUNT(DISTINCT CASE WHEN (sum_pv > 0) AND (sum_is_visible > 0) THEN product_id END) AS Products_viewed
+        ,COUNT(DISTINCT CASE WHEN (count_add_to_cart > 0) THEN product_id END) AS Products_atc
+        ,COUNT(DISTINCT CASE WHEN (items_sold > 0) THEN product_id END) AS Products_sold
+        ,SUM(items_sold) AS Total_Products_sold
+FROM    daraz_ads.ads_drz_prd_assortment_battle_1m
+--where     substr(ds,1,6) in (202301,202302)
+where     (substr(ds,1,6) in (202303)
+or        substr(ds,1,8) between (20220301) and (20220313))
+--OR       substr(ds,1,8)  between (20230101) and (20230221))
+AND     venture = 'PK'
+AND     venture_category1_name_en IN ('Media Music & Books','Sports & Outdoors','Stationery & Craft','Toys & Games') 
+--AND     venture_category1_name_en IN ('Bedding & Bath','Furniture & Décor','Kitchen & Dining','Laundry & Cleaning','Media Music & Books','Motors','Sports & Outdoors','Stationery & Craft','Tools DIY & Outdoor','Toys & Games','Packaging Material','Charity and Donation')
+--AND     venture_category1_name_en IN ('Bedding & Bath', 'Furniture & Décor', 'Kitchen & Dining', 'Laundry & Cleaning', 'Media Music & Books', 'Motors','Sports & Outdoors', 'Stationery & Craft', 'Tools DIY & Outdoor', 'Toys & Games','Packaging Material','Charity and Donation')
+--and     venture_category1_name_en in ('Media Music & Books')
+GROUP BY SUBSTR(ds,1,6)
+,seller_id
+        ,brand_name
