@@ -1,0 +1,68 @@
+Drop table if exists epr_stage.left_companies;
+CREATE TABLE epr_stage.left_companies (
+    id   VARCHAR(200),
+    name VARCHAR(200)
+);
+
+INSERT INTO epr_stage.left_companies (id, name) VALUES
+(1, 'Acme Corporation'),
+(2, 'Globex International'),
+(3, 'Initech'),
+(4, 'Stark Industries'),
+(5, 'Wayne Enterprises'),
+(6, 'Umbrella Corp'),
+(7, 'Hooli'),
+(8, 'ACME Corp.'),
+(9, 'Globex Intl'),
+(10, 'Init Tech'),
+(11, 'Stark Ind.'),
+(12, 'Wane Ent.'),
+(13, 'Umbrela Corporation'),
+(14, 'Hooly');
+
+-- RIGHT TABLE
+Drop table if exists epr_stage.right_companies;
+CREATE TABLE epr_stage.right_companies (
+    id   VARCHAR(200),
+    name VARCHAR(200)
+);
+
+INSERT INTO epr_stage.right_companies (id, name) VALUES
+(1, 'Acme Corporation'),
+(2, 'Globex International'),
+(3, 'Initech'),
+(4, 'Stark Industries'),
+(5, 'Wayne Enterprises'),
+(6, 'Umbrella Corp'),
+(7, 'Hooli'),
+(8, 'ACME Corp.'),
+(9, 'Globex Intl'),
+(10, 'Init Tech'),
+(11, 'Stark Ind.'),
+(12, 'Wane Ent.'),
+(13, 'Umbrela Corporation'),
+(14, 'Hooly');
+
+WITH a AS (
+    SELECT *, 
+           LOWER(REPLACE(REPLACE(REPLACE(name, '.', ''), ',', ''), '-', '')) AS normalised,
+           LEFT(LOWER(REPLACE(REPLACE(REPLACE(name, '.', ''), ',', ''), '-', '')), 1) AS block_key
+    FROM epr_stage.left_companies
+),
+b AS (
+    SELECT *, 
+           LOWER(REPLACE(REPLACE(REPLACE(name, '.', ''), ',', ''), '-', '')) AS normalised,
+           LEFT(LOWER(REPLACE(REPLACE(REPLACE(name, '.', ''), ',', ''), '-', '')), 1) AS block_key
+    FROM epr_stage.right_companies
+)
+SELECT a.id
+       ,b.id
+       ,a.name
+       ,b.name       
+       ,1-(levenshtein(a.normalised, b.normalised)/greatest(length(a.normalised), length(b.normalised))) AS levenshtein_dist
+FROM a
+JOIN b
+ON a.id <= b.id
+GROUP BY a.id, b.id, a.name, b.name, a.normalised, b.normalised
+HAVING levenshtein_dist >= 0.5
+;
